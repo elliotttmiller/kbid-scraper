@@ -1,0 +1,15 @@
+2026-01-29 21:29:42,466 - INFO - Streaming CSV output initialized: results\test_kbid_auction_1.csv
+2026-01-29 21:29:42,467 - INFO - Fetching auction list pages...
+2026-01-29 21:29:44,558 - INFO - Found auction listing page 1
+2026-01-29 21:29:46,928 - INFO - Found auction listing page 2
+2026-01-29 21:29:48,620 - INFO - Found auction listing page 3
+2026-01-29 21:29:48,625 - INFO - No 'Next' button found, reached last page
+2026-01-29 21:29:48,626 - INFO - Total listing pages found: 3
+2026-01-29 21:29:48,626 - INFO - Extracting auctions from: https://www.k-bid.com/auction/list
+2026-01-29 21:29:50,318 - INFO - Found 50 unique auctions on this page
+2026-01-29 21:29:51,319 - INFO - Extracting auctions from: https://www.k-bid.com/auction/list?page=2
+2026-01-29 21:29:53,264 - INFO - Found 50 unique auctions on this page
+2026-01-29 21:29:54,266 - INFO - Extracting auctions from: https://www.k-bid.com/auction/list?page=3
+2026-01-29 21:29:55,153 - INFO - Found 23 unique auctions on this page
+2026-01-29 21:29:56,872 - INFO - Scraping items from: Give Me a Bidd Consignment Auction with Rocks/Agates, Toys, ...
+2026-01-29 21:29:57,453 - INFO -   Page 1: Processing 198 items...
