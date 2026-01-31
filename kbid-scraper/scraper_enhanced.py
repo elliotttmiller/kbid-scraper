@@ -73,6 +73,8 @@ class ItemListing:
     # Additional
     location: str
     item_url: str
+    auction_title: Optional[str]
+    auction_url: Optional[str]
     scraped_at: str
 
 
@@ -365,6 +367,9 @@ class ProductionKBidScraper:
         logger.info(f"Scraping items for auction {auction_id}...")
         url = f"{self.BASE_URL}/auction/{auction_id}"
         
+        # Fetch auction-level metadata so items can include auction title/url
+        auction_info = self.extract_auction_details(url) or {}
+
         driver = self._init_driver()
         items = []
 
@@ -408,7 +413,7 @@ class ProductionKBidScraper:
                 if max_items and idx >= max_items:
                     break
 
-                item = self._parse_item_container(container, auction_id)
+                item = self._parse_item_container(container, auction_id, auction_info)
                 if not item:
                     continue
 
@@ -523,9 +528,10 @@ class ProductionKBidScraper:
             return containers
         return filtered
     
-    def _parse_item_container(self, container, auction_id: str) -> Optional[ItemListing]:
+    def _parse_item_container(self, container, auction_id: str, auction_info: dict = None) -> Optional[ItemListing]:
         """Parse item container using verified selectors"""
         try:
+            auction_info = auction_info or {}
             # Accept either a container element or a heading/link node; mirror legacy behavior
             lot_elem = container
             if getattr(lot_elem, 'name', None) in ('a', 'h4', 'h5', 'h3', 'h2', 'h6'):
@@ -672,6 +678,20 @@ class ProductionKBidScraper:
                     item_link = None
                 else:
                     item_url = urljoin(self.BASE_URL, href)
+            # If there's no clear item URL or lot evidence, treat as non-item
+            has_lot_evidence = False
+            if item_url:
+                has_lot_evidence = True
+            if not has_lot_evidence:
+                # check if container has explicit lot number or lot-title class
+                if container.find(string=re.compile(r'Lot:\s*\d+', re.I)):
+                    has_lot_evidence = True
+                if container.find(class_=re.compile(r'lot-title')):
+                    has_lot_evidence = True
+
+            if not has_lot_evidence:
+                logger.debug("Skipping container without /item/ link or lot evidence")
+                return None
                 # Extract item_id from URL
                 url_parts = item_url.rstrip('/').split('/')
                 if 'item' in url_parts:
@@ -707,6 +727,8 @@ class ProductionKBidScraper:
                 time_remaining=time_remaining,
                 location="",
                 item_url=item_url,
+                auction_title=auction_info.get('auction_title'),
+                auction_url=auction_info.get('auction_url'),
                 scraped_at=datetime.now().isoformat()
             )
             
