@@ -30,6 +30,7 @@ from collections import Counter
 from collections import Counter
 import os
 import signal
+import uuid
 
 # Ensure results directory exists and configure logging with UTF-8 encoding
 RESULTS_DIR = 'results'
@@ -125,6 +126,17 @@ class KBidScraper:
             'start_time': None,
             'end_time': None
         }
+        # Create a unique run directory inside RESULTS_DIR for this scraping session.
+        # This keeps the outputs for each run isolated (CSV, debug files, summaries).
+        try:
+            ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+            self.run_id = f"run_{ts}_{str(uuid.uuid4())[:8]}"
+            self.run_dir = os.path.join(RESULTS_DIR, self.run_id)
+            os.makedirs(self.run_dir, exist_ok=True)
+            logger.info(f"Run directory initialized: {self.run_dir}")
+        except Exception:
+            # Fall back to RESULTS_DIR if creation fails
+            self.run_dir = RESULTS_DIR
     
     def get_auction_list_pages(self):
         """
@@ -593,33 +605,58 @@ class KBidScraper:
         
         # Get current bid (only if fetching details)
         if fetch_details:
-            bid_elem = container.find(string=re.compile(r'Current Bid', re.I)) if hasattr(container, 'find') else None
-            if bid_elem:
-                bid_parent = bid_elem.find_parent()
-                if bid_parent:
-                    bid_text = bid_parent.find_next().get_text(strip=True) if bid_parent.find_next() else bid_parent.get_text(strip=True)
-                    bid_match = re.search(r'\$?([\d,]+\.?\d*)', bid_text)
-                    item['current_bid'] = bid_match.group(1).replace(',', '') if bid_match else "0.00"
+            # Use the robust label/value helper first to avoid capturing unrelated numeric ids
+            bid_val = self.find_label_value(container, label_regexes=[re.compile(r'Current\s*Bid', re.I)])
+            # Require an explicit currency symbol from the label/value helper to avoid capturing
+            # nearby numeric ids (e.g. '#490526'). If none, treat as not found and fall back.
+            parsed = None
+            if bid_val and re.search(r'[$£€]', str(bid_val)):
+                parsed = self.parse_money(bid_val)
+            if parsed:
+                item['current_bid'] = parsed
+            else:
+                # Fallback: try the previous heuristic but feed result through parse_money to avoid stray ids
+                bid_elem = container.find(string=re.compile(r'Current Bid', re.I)) if hasattr(container, 'find') else None
+                if bid_elem:
+                    try:
+                        bid_parent = bid_elem.find_parent()
+                        if bid_parent:
+                            bid_text = bid_parent.find_next().get_text(strip=True) if bid_parent.find_next() else bid_parent.get_text(strip=True)
+                            parsed2 = self.parse_money(bid_text)
+                            item['current_bid'] = parsed2 if parsed2 else "0.00"
+                        else:
+                            item['current_bid'] = "0.00"
+                    except Exception:
+                        item['current_bid'] = "0.00"
                 else:
                     item['current_bid'] = "0.00"
-            else:
-                item['current_bid'] = "0.00"
         else:
             item['current_bid'] = "N/A"
         
         # Get next required bid (only if fetching details)
         if fetch_details:
-            next_bid_elem = container.find(string=re.compile(r'Next Required Bid', re.I)) if hasattr(container, 'find') else None
-            if next_bid_elem:
-                next_parent = next_bid_elem.find_parent()
-                if next_parent:
-                    next_text = next_parent.find_next().get_text(strip=True) if next_parent.find_next() else next_parent.get_text(strip=True)
-                    next_match = re.search(r'\$?([\d,]+\.?\d*)', next_text)
-                    item['next_required_bid'] = next_match.group(1).replace(',', '') if next_match else "N/A"
+            next_val = self.find_label_value(container, label_regexes=[re.compile(r'Next\s*Required\s*Bid|Next\s*Bid|Next', re.I)])
+            parsed_next = None
+            if next_val and re.search(r'[$£€]', str(next_val)):
+                parsed_next = self.parse_money(next_val)
+            if parsed_next:
+                item['next_required_bid'] = parsed_next
+            else:
+                # Fallback to heuristic
+                next_bid_elem = container.find(string=re.compile(r'Next Required Bid', re.I)) if hasattr(container, 'find') else None
+                if next_bid_elem:
+                    try:
+                        next_parent = next_bid_elem.find_parent()
+                        if next_parent:
+                            next_text = next_parent.find_next().get_text(strip=True) if next_parent.find_next() else next_parent.get_text(strip=True)
+                            parsed3 = self.parse_money(next_text)
+                            item['next_required_bid'] = parsed3 if parsed3 else "N/A"
+                        else:
+                            item['next_required_bid'] = "N/A"
+                    except Exception:
+                        item['next_required_bid'] = "N/A"
                 else:
                     item['next_required_bid'] = "N/A"
-            else:
-                item['next_required_bid'] = "N/A"
         else:
             item['next_required_bid'] = "N/A"
         
@@ -711,14 +748,47 @@ class KBidScraper:
                 item['item_title'] = title_h.get_text(strip=True)
 
             # Current bid
-            bid_elem = soup.find(string=re.compile(r'Current Bid', re.I))
-            if bid_elem:
-                bid_parent = bid_elem.find_parent()
-                if bid_parent:
-                    next_text = bid_parent.find_next().get_text(strip=True) if bid_parent.find_next() else bid_parent.get_text(strip=True)
-                    m = re.search(r'\$?([\d,]+\.?\d*)', next_text)
-                    if m:
-                        item['current_bid'] = m.group(1).replace(',', '')
+            # Current bid - prefer precise selectors commonly used by K-Bid's template.
+            # Example element in source:
+            # <span class="lot-current-bid" id="lot_current_bid_lot_k-bid_...">$11.00</span>
+            cur_found = False
+            try:
+                # 1) Direct CSS class frequently used for current bid
+                el = soup.select_one('.lot-current-bid')
+                # 2) Fallback: id pattern used by template
+                if not el:
+                    el = soup.find(id=re.compile(r'lot_current_bid', re.I))
+                # 3) Generic id-prefix fallback
+                if not el:
+                    try:
+                        el = soup.select_one('[id^=lot_current_bid]')
+                    except Exception:
+                        el = None
+
+                if el and el.get_text(strip=True):
+                    txt = el.get_text(strip=True)
+                    p = self.parse_money(txt)
+                    if p:
+                        item['current_bid'] = p
+                        self.bid_source_counter['item_html'] += 1
+                        cur_found = True
+            except Exception:
+                cur_found = False
+
+            # 4) If the selector-based approach didn't find a price, fall back to label-based search
+            if not cur_found:
+                bid_elem = soup.find(string=re.compile(r'Current Bid', re.I))
+                if bid_elem:
+                    bid_parent = bid_elem.find_parent()
+                    if bid_parent:
+                        # Look for the nearest money-like node after the label (prefer $)
+                        nxt = bid_parent.find_next(string=re.compile(r'[$£€]?\s*[\d,]+\.?\d{0,2}'))
+                        if nxt:
+                            parsed = self.parse_money(nxt)
+                            if parsed:
+                                item['current_bid'] = parsed
+                                self.bid_source_counter['item_html'] += 1
+                                cur_found = True
 
             # High bidder
             bidder_elem = soup.find(string=re.compile(r'High Bidder', re.I))
@@ -765,13 +835,36 @@ class KBidScraper:
             parsed_cur = self.parse_money(cur) if cur and cur not in ('N/A', '') else None
 
             if not parsed_cur or parsed_cur == '0.00':
-                # 1) Try label/value search on the item page HTML
-                lbl = self.find_label_value(soup, label_regexes=[re.compile(r'Current\s*Bid', re.I), re.compile(r'Bid', re.I)])
-                parsed = self.parse_money(lbl) if lbl else None
+                # 1) Try a precise label/value search on the item page HTML.
+                # Prefer exact 'Current Bid' label (avoid generic 'Bid' which matches 'High Bidder').
+                lbl = self.find_label_value(soup, label_regexes=[re.compile(r'Current\s*Bid', re.I)])
+                parsed = None
+                # Accept label/value result only if it contains an explicit currency symbol to avoid
+                # capturing nearby numeric IDs (e.g. '#472745'). If the page omits a symbol then
+                # we'll try a more directed DOM search below.
+                if lbl and re.search(r'[$£€]', str(lbl)):
+                    parsed = self.parse_money(lbl)
+
                 if parsed:
                     item['current_bid'] = parsed
                     self.bid_source_counter['item_html'] += 1
                     parsed_cur = parsed
+                else:
+                    # Directed DOM search: find the specific 'Current Bid' node and look for the
+                    # nearest money-looking sibling or next text node (this helps when value is
+                    # on the next line without an explicit currency symbol).
+                    bid_elem2 = soup.find(string=re.compile(r'Current\s*Bid', re.I))
+                    if bid_elem2:
+                        bp = bid_elem2.find_parent()
+                        if bp:
+                            # Look for the next text node that looks like money (prefer $)
+                            nxt = bp.find_next(string=re.compile(r'[$£€]?\s*[\d,]+\.?\d{0,2}'))
+                            if nxt:
+                                p2 = self.parse_money(nxt)
+                                if p2:
+                                    item['current_bid'] = p2
+                                    self.bid_source_counter['item_html'] += 1
+                                    parsed_cur = p2
 
             if not parsed_cur or parsed_cur == '0.00':
                 # 2) Scan scripts for JSON blobs containing bid information
@@ -883,7 +976,7 @@ class KBidScraper:
             # If still missing/zero and we haven't sampled too many failures, record a debug row
             if (not parsed_cur or parsed_cur == '0.00') and self._debug_failures_sampled < self._debug_failures_limit:
                 try:
-                    dbg_path = os.path.join(RESULTS_DIR, 'debug_bid_failures.csv')
+                    dbg_path = os.path.join(self.run_dir, 'debug_bid_failures.csv')
                     header = ['auction_id', 'lot_number', 'item_url', 'found_current_bid', 'sample_script_snippet']
                     write_header = not os.path.exists(dbg_path)
                     snippet = ''
@@ -1209,7 +1302,7 @@ class KBidScraper:
 
         # Also write a small summary file in the results directory
         try:
-            out_path = os.path.join(RESULTS_DIR, 'field_availability_summary.txt')
+            out_path = os.path.join(self.run_dir, 'field_availability_summary.txt')
             with open(out_path, 'w', encoding='utf-8') as f:
                 f.write('Field availability summary\n')
                 f.write('=' * 60 + '\n')
@@ -1225,9 +1318,9 @@ class KBidScraper:
     def start_streaming_csv(self, filename='kbid_auctions_data.csv'):
         """Open a CSV file and prepare a streaming writer. Thread-safe via self.csv_lock."""
         try:
-            # Normalize path into results directory unless an absolute path was provided
+            # Normalize path into the run-specific directory unless an absolute path was provided
             if not os.path.isabs(filename):
-                filename = os.path.join(RESULTS_DIR, filename)
+                filename = os.path.join(self.run_dir, filename)
             os.makedirs(os.path.dirname(filename), exist_ok=True)
             self.csv_file = open(filename, 'w', newline='', encoding='utf-8')
             # Ensure header order follows include_fields
@@ -1299,9 +1392,9 @@ class KBidScraper:
             headers = [field for field in headers if field in self.include_fields]
         
         try:
-            # Normalize filename into results directory if not absolute
+            # Normalize filename into the run-specific directory if not absolute
             if not os.path.isabs(filename):
-                filename = os.path.join(RESULTS_DIR, filename)
+                filename = os.path.join(self.run_dir, filename)
             os.makedirs(os.path.dirname(filename), exist_ok=True)
 
             with open(filename, 'w', newline='', encoding='utf-8') as f:
@@ -1325,11 +1418,11 @@ class KBidScraper:
         """
         try:
             if filename is None:
-                filename = os.path.join(RESULTS_DIR, 'scraper_summary.txt')
+                filename = os.path.join(self.run_dir, 'scraper_summary.txt')
             else:
-                # ensure path is inside results dir if a plain filename was given
+                # ensure path is inside the run dir if a plain filename was given
                 if not os.path.isabs(filename):
-                    filename = os.path.join(RESULTS_DIR, filename)
+                    filename = os.path.join(self.run_dir, filename)
 
             with open(filename, 'w', encoding='utf-8') as f:
                 f.write("K-BID AUCTION SCRAPER - SESSION SUMMARY\n")
