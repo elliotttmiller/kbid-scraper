@@ -1,0 +1,99 @@
+2026-01-31 00:39:38,475 - INFO - Starting quick test script
+2026-01-31 00:39:38,476 - INFO - Run directory: results\run_20260131_003938_09384add
+2026-01-31 00:39:38,476 - INFO - Fetching auction details: https://www.k-bid.com/auction/62605
+2026-01-31 00:39:39,926 - INFO -   Auction ID: 62605, Title: H2 Equipment - NEBRASKA Mini Skid Steer and Attachments-----Winchs,Carports,Shop Supplies,Meat Processing & Single Trip Container ------ No Reserves
+2026-01-31 00:39:39,926 - INFO -   Scraping page 1: https://www.k-bid.com/auction/62605
+2026-01-31 00:39:40,497 - INFO -   Found 200 potential item containers on page 1
+2026-01-31 00:39:42,910 - INFO -   Reached max_items limit: 3
+2026-01-31 00:39:42,910 - INFO - Saving 3 items to results\run_20260131_003938_09384add\test_kbid_5_items.csv...
+2026-01-31 00:39:42,910 - INFO - Data saved to results\run_20260131_003938_09384add\test_kbid_5_items.csv
+2026-01-31 00:39:42,910 - INFO - Quick test complete
+2026-01-31 00:39:42,910 - INFO - Output CSV: results\run_20260131_003938_09384add\test_kbid_5_items.csv
+2026-01-31 00:39:42,910 - INFO - Total items saved: 3
+2026-01-31 00:39:42,910 - INFO - Run directory: results\run_20260131_003938_09384add
+2026-01-31 00:42:20,042 - INFO - Starting quick test script
+2026-01-31 00:42:20,042 - INFO - Run directory: results\run_20260131_004220_43a5bfa9
+2026-01-31 00:42:20,042 - INFO - Fetching auction details: https://www.k-bid.com/auction/62605
+2026-01-31 00:42:21,566 - INFO -   Auction ID: 62605, Title: H2 Equipment - NEBRASKA Mini Skid Steer and Attachments-----Winchs,Carports,Shop Supplies,Meat Processing & Single Trip Container ------ No Reserves
+2026-01-31 00:42:21,566 - INFO -   Scraping page 1: https://www.k-bid.com/auction/62605
+2026-01-31 00:42:22,304 - INFO -   Found 200 potential item containers on page 1
+2026-01-31 00:42:24,695 - INFO -   Reached max_items limit: 3
+2026-01-31 00:42:24,711 - INFO - Saving 3 items to results\run_20260131_004220_43a5bfa9\test_kbid_5_items.csv...
+2026-01-31 00:42:24,711 - INFO - Data saved to results\run_20260131_004220_43a5bfa9\test_kbid_5_items.csv
+2026-01-31 00:42:24,711 - INFO - Quick test complete
+2026-01-31 00:42:24,711 - INFO - Output CSV: results\run_20260131_004220_43a5bfa9\test_kbid_5_items.csv
+2026-01-31 00:42:24,711 - INFO - Total items saved: 3
+2026-01-31 00:42:24,711 - INFO - Run directory: results\run_20260131_004220_43a5bfa9
+2026-01-31 00:45:52,307 - INFO - Starting quick test script
+2026-01-31 00:45:52,307 - INFO - Run directory: results\run_20260131_004552_f0ca56d2
+2026-01-31 00:45:52,307 - INFO - No auction URL provided. Fetching listing pages to find the first auction...
+2026-01-31 00:45:52,322 - INFO - Fetching auction list pages...
+2026-01-31 00:45:54,798 - INFO - Found auction listing page 1
+2026-01-31 00:45:57,547 - INFO - Found auction listing page 2
+2026-01-31 00:45:59,769 - INFO - Found auction listing page 3
+2026-01-31 00:45:59,769 - INFO - Total listing pages: 3
+2026-01-31 00:45:59,769 - INFO - Extracting auctions from: https://www.k-bid.com/auction/list
+2026-01-31 00:46:01,528 - INFO -   Found 50 unique auctions
+2026-01-31 00:46:01,528 - INFO - Using first discovered auction: https://www.k-bid.com/auction/63039
+2026-01-31 00:46:01,528 - INFO - Fetching auction details: https://www.k-bid.com/auction/63039
+2026-01-31 00:46:02,435 - INFO -   Auction ID: 63039, Title: Mike's Auto Auction #153
+2026-01-31 00:46:02,435 - INFO -   Scraping page 1: https://www.k-bid.com/auction/63039
+2026-01-31 00:46:03,195 - INFO -   Found 64 potential item containers on page 1
+2026-01-31 00:46:08,747 - INFO -   Reached max_items limit: 5
+2026-01-31 00:46:08,747 - INFO - Saving 5 items to results\run_20260131_004552_f0ca56d2\test_kbid_5_items.csv...
+2026-01-31 00:46:08,747 - INFO - Data saved to results\run_20260131_004552_f0ca56d2\test_kbid_5_items.csv
+2026-01-31 00:46:08,747 - INFO - Quick test complete
+2026-01-31 00:46:08,747 - INFO - Output CSV: results\run_20260131_004552_f0ca56d2\test_kbid_5_items.csv
+2026-01-31 00:46:08,747 - INFO - Total items saved: 5
+2026-01-31 00:46:08,747 - INFO - Run directory: results\run_20260131_004552_f0ca56d2
+2026-01-31 00:47:59,082 - INFO - Starting quick test script
+2026-01-31 00:47:59,098 - INFO - Run directory: results\run_20260131_004759_6831cadd
+2026-01-31 00:47:59,098 - INFO - No auction URL provided. Fetching listing pages to find the first auction...
+2026-01-31 00:47:59,098 - INFO - Fetching auction list pages...
+2026-01-31 00:48:02,120 - INFO - Found auction listing page 1
+2026-01-31 00:48:06,402 - INFO - Found auction listing page 2
+2026-01-31 00:48:08,609 - INFO - Found auction listing page 3
+2026-01-31 00:48:08,625 - INFO - Total listing pages: 3
+2026-01-31 00:48:08,625 - INFO - Extracting auctions from: https://www.k-bid.com/auction/list
+2026-01-31 00:48:10,545 - INFO -   Found 50 unique auctions
+2026-01-31 00:48:10,545 - INFO - Using first discovered auction: https://www.k-bid.com/auction/63039
+2026-01-31 00:48:10,545 - INFO - Fetching auction details: https://www.k-bid.com/auction/63039
+2026-01-31 00:48:11,399 - INFO -   Auction ID: 63039, Title: Mike's Auto Auction #153
+2026-01-31 00:48:11,399 - INFO -   Scraping page 1: https://www.k-bid.com/auction/63039
+2026-01-31 00:48:11,781 - INFO -   Found 64 potential item containers on page 1
+2026-01-31 00:48:17,411 - INFO -   Reached max_items limit: 5
+2026-01-31 00:48:17,411 - INFO - Saving 5 items to results\run_20260131_004759_6831cadd\test_kbid_5_items.csv...
+2026-01-31 00:48:17,411 - INFO - Data saved to results\run_20260131_004759_6831cadd\test_kbid_5_items.csv
+2026-01-31 00:48:17,411 - INFO - Quick test complete
+2026-01-31 00:48:17,411 - INFO - Output CSV: results\run_20260131_004759_6831cadd\test_kbid_5_items.csv
+2026-01-31 00:48:17,411 - INFO - Total items saved: 5
+2026-01-31 00:48:17,411 - INFO - Run directory: results\run_20260131_004759_6831cadd
+2026-01-31 01:00:06,617 - INFO - Starting quick test script
+2026-01-31 01:00:06,617 - INFO - Run directory: results\run_20260131_010006_0f4158ab
+2026-01-31 01:00:06,617 - INFO - Fetching auction details: https://www.k-bid.com/auction/63039
+2026-01-31 01:00:08,212 - INFO -   Auction ID: 63039, Title: Mike's Auto Auction #153
+2026-01-31 01:00:08,260 - INFO -   Scraping page 1: https://www.k-bid.com/auction/63039
+2026-01-31 01:00:08,912 - INFO -   Found 64 potential item containers on page 1
+2026-01-31 01:00:35,745 - INFO - Starting quick test script
+2026-01-31 01:00:35,745 - INFO - Run directory: results\run_20260131_010035_a568fa4c
+2026-01-31 01:00:35,745 - INFO - No auction URL provided. Fetching listing pages to find the first auction...
+2026-01-31 01:00:35,745 - INFO - Fetching auction list pages...
+2026-01-31 01:00:39,109 - INFO - Found auction listing page 1
+2026-01-31 01:00:42,008 - INFO - Found auction listing page 2
+2026-01-31 01:00:44,043 - INFO - Found auction listing page 3
+2026-01-31 01:00:44,059 - INFO - Total listing pages: 3
+2026-01-31 01:00:44,059 - INFO - Extracting auctions from: https://www.k-bid.com/auction/list
+2026-01-31 01:00:45,809 - INFO -   Found 50 unique auctions
+2026-01-31 01:00:45,809 - INFO - Using first discovered auction: https://www.k-bid.com/auction/63039
+2026-01-31 01:00:45,809 - INFO - Fetching auction details: https://www.k-bid.com/auction/63039
+2026-01-31 01:00:46,250 - INFO -   Auction ID: 63039, Title: Mike's Auto Auction #153
+2026-01-31 01:00:46,250 - INFO -   Scraping page 1: https://www.k-bid.com/auction/63039
+2026-01-31 01:00:46,729 - INFO -   Found 64 potential item containers on page 1
+2026-01-31 01:01:11,653 - INFO -   No more pages for this auction
+2026-01-31 01:01:11,653 - INFO -   Total items from auction: 16
+2026-01-31 01:01:11,653 - INFO - Saving 16 items to results\run_20260131_010035_a568fa4c\full_auction_test.csv...
+2026-01-31 01:01:11,653 - INFO - Data saved to results\run_20260131_010035_a568fa4c\full_auction_test.csv
+2026-01-31 01:01:11,653 - INFO - Quick test complete
+2026-01-31 01:01:11,653 - INFO - Output CSV: results\run_20260131_010035_a568fa4c\full_auction_test.csv
+2026-01-31 01:01:11,653 - INFO - Total items saved: 16
+2026-01-31 01:01:11,653 - INFO - Run directory: results\run_20260131_010035_a568fa4c

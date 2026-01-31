@@ -1,887 +1,662 @@
 """
-Production K-Bid Scraper
-Uses verified selectors from actual K-Bid HTML source data
-Clean, fast, accurate - no unnecessary overhead
+K-Bid Auction Scraper - FIXED VERSION
+======================================
+This version properly extracts current bid prices and all other data
+using the correct ID patterns found in K-Bid's HTML structure.
+
+Key fixes:
+1. Proper ID pattern matching: lot_current_bid_lot_k-bid_{auction_id}_{lot_id}
+2. Robust bid extraction from listing pages
+3. Better parsing logic that handles the actual HTML structure
+
+Author: Claude
+Date: January 2026
 """
 
-import logging
+import requests
+from bs4 import BeautifulSoup
+import csv
 import time
 import re
-from typing import Dict, List, Optional
-from datetime import datetime
-from dataclasses import dataclass, asdict
-import json
-
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, NoSuchElementException
-from bs4 import BeautifulSoup
-import requests
 from urllib.parse import urljoin
+from datetime import datetime
+import logging
+import sys
+import os
+import uuid
 
-logging.basicConfig(level=logging.INFO)
+# Ensure results directory exists
+RESULTS_DIR = 'results'
+os.makedirs(RESULTS_DIR, exist_ok=True)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(os.path.join(RESULTS_DIR, 'kbid_scraper.log'), encoding='utf-8'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class AuctionListing:
-    """Auction listing data"""
-    auction_id: str
-    title: str
-    url: str
-    auctioneer: str
-    location: str
-    total_lots: int
-    closing_date: Optional[str]
-    status: str
-    scraped_at: str
-
-
-@dataclass
-class ItemListing:
-    """Complete item/lot data from K-Bid"""
-    # Identifiers
-    item_id: str
-    lot_number: str
-    auction_id: str
+class KBidScraperFixed:
+    """Fixed K-Bid scraper with proper bid extraction"""
     
-    # Basic info
-    title: str
-    description: str
-    
-    # Bidding information
-    current_bid: Optional[float]
-    next_required_bid: Optional[float]
-    your_max_bid: Optional[float]
-    high_bidder: Optional[str]
-    bid_count: int
-    
-    # Status
-    is_winning: bool
-    reserve_met: bool
-    
-    # Media
-    image_urls: List[str]
-    primary_image_url: str
-    
-    # Timing
-    closing_time: Optional[str]
-    time_remaining: Optional[str]
-    
-    # Additional
-    location: str
-    item_url: str
-    auction_title: Optional[str]
-    auction_url: Optional[str]
-    scraped_at: str
-
-
-class ProductionKBidScraper:
-    """
-    Production K-Bid scraper using verified selectors from real source data
-    """
-    
-    BASE_URL = "https://www.k-bid.com"
-    
-    # Verified selectors from actual K-Bid HTML
-    SELECTORS = {
-        # Primary selectors (highest reliability)
-        'current_bid': '#lot_current_bid_lot_k-bid',  # Will use pattern matching
-        'next_required_bid': '#lot_next_required_bid_lot_k-bid',  # Pattern matching
-        'your_max_bid': '#lot_your_current_max_bid_lot_k-bid',  # Pattern matching
-        'high_bidder': '#lot_current_high_bidder_detail_lot_k-bid',  # Pattern matching
-        'winning_placeholder': '#winning_placeholder_lot_k-bid',  # Pattern matching
-        
-        # Content selectors
-        'item_title': 'article.content-card > h3',
-        'item_title_fallback': 'span.lot-title',
-        'item_description': 'div.lot-description',
-        
-        # Image selectors
-        'primary_image': 'div.galleria-image > img',
-        'images_fallback': 'img.img-responsive',
-        
-        # Timing selectors
-        'closing_time': 'span.lot-closing-time',
-        'time_remaining': 'span.time-remaining',
-        
-        # Other info
-        'bid_count': 'span.bid-count',
-        'auction_title': 'h3#auction_title a',
-    }
-    
-    def __init__(self, headless: bool = True, rate_limit: float = 1.5):
-        """Initialize scraper with settings"""
-        self.headless = headless
-        self.rate_limit = rate_limit
+    def __init__(self, delay=1.0):
+        self.base_url = "https://www.k-bid.com"
+        self.delay = delay
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Connection': 'keep-alive',
         })
-        
-    def _init_driver(self) -> Optional[webdriver.Chrome]:
-        """Initialize Selenium WebDriver.
-
-        If driver initialization fails (e.g. missing Chromedriver or low disk
-        space prevents selenium-manager from provisioning binaries), return
-        None so callers can fall back to a requests-only parsing mode.
-        """
-        options = webdriver.ChromeOptions()
-
-        if self.headless:
-            options.add_argument('--headless=new')
-
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--disable-blink-features=AutomationControlled')
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option('useAutomationExtension', False)
-        options.add_argument('--disable-gpu')
-        options.add_argument('user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')
-
-        try:
-            driver = webdriver.Chrome(options=options)
-            # Try to mask automation flag
-            try:
-                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            except Exception:
-                # Non-fatal if the script execution fails
-                pass
-            return driver
-        except Exception as e:
-            logger.warning(
-                "Selenium WebDriver initialization failed (%s). Falling back to requests-only parsing.",
-                e
-            )
-            return None
+        self.all_items = []
+        self.stats = {
+            'auctions_found': 0,
+            'items_scraped': 0,
+            'errors': 0,
+            'start_time': None,
+            'end_time': None
+        }
+        # Create unique run directory
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        self.run_id = f"run_{ts}_{str(uuid.uuid4())[:8]}"
+        self.run_dir = os.path.join(RESULTS_DIR, self.run_id)
+        os.makedirs(self.run_dir, exist_ok=True)
+        logger.info(f"Run directory: {self.run_dir}")
     
-    def _parse_currency(self, text: str) -> Optional[float]:
-        """Parse currency string to float"""
+    def parse_money(self, text):
+        """Parse money string to decimal format"""
         if not text:
-            return None
+            return "0.00"
         try:
-            cleaned = re.sub(r'[$,\s]', '', text)
-            return float(cleaned)
+            # Remove currency symbols and whitespace
+            cleaned = re.sub(r'[$£€,\s]', '', str(text))
+            # Extract first number found
+            match = re.search(r'(\d+\.?\d*)', cleaned)
+            if match:
+                return f"{float(match.group(1)):.2f}"
+            return "0.00"
         except (ValueError, AttributeError):
-            return None
+            return "0.00"
     
-    def _extract_ids_from_element_id(self, element_id: str) -> tuple:
-        """Extract auction_id and lot_id from K-Bid element ID pattern"""
+    def extract_ids_from_element_id(self, element_id):
+        """
+        Extract auction_id and lot_id from K-Bid element ID pattern
+        Pattern: lot_current_bid_lot_k-bid_{auction_id}_{lot_id}
+        """
         if not element_id:
             return None, None
-        match = re.search(r'lot_k-bid_(\d+)_(\d+)', element_id)
+        match = re.search(r'lot_k-bid[_-](\d+)[_-](\d+)', element_id)
         if match:
             return match.group(1), match.group(2)
         return None, None
     
-    def _find_element_by_id_pattern(self, soup, pattern: str):
-        """Find element by ID pattern (e.g., 'lot_current_bid_lot_k-bid')"""
-        elements = soup.find_all(id=re.compile(f'{pattern}_\\d+_\\d+'))
+    def find_bid_element(self, soup, pattern_base='lot_current_bid_lot_k-bid'):
+        """
+        Find bid element by ID pattern
+        Pattern: lot_current_bid_lot_k-bid_{auction_id}_{lot_id}
+        """
+        # Look for elements with IDs matching the pattern
+        elements = soup.find_all(id=re.compile(f'{pattern_base}[_-]\\d+[_-]\\d+'))
         return elements[0] if elements else None
     
-    def _get_text_safe(self, element) -> str:
-        """Safely get text from element"""
-        if element:
-            return element.get_text(strip=True)
-        return ""
-    
-    def scrape_auction_list(self, status: str = "active") -> List[AuctionListing]:
-        """Scrape all auctions using the same requests-based pagination workflow
-        as the original `kbid_scraper.KBidScraper`.
-
-        This method prefers the requests + BeautifulSoup workflow to discover
-        auction listing pages and extract auction URLs. It returns a list of
-        AuctionListing dataclass instances populated with basic metadata.
+    def fetch_item_details_from_page(self, item_url):
         """
-        logger.info(f"Scraping auction list (status={status})...")
-
-        # Discover listing pages (pagination)
-        try:
-            pages = self.get_auction_list_pages()
-        except Exception as e:
-            logger.error(f"Failed to discover auction listing pages: {e}")
-            return []
-
-        auctions: List[AuctionListing] = []
-
-        for page_url in pages:
-            try:
-                found = self.get_auctions_from_page(page_url)
-                for info in found:
-                    auction_url = info.get('url')
-                    auction_id = auction_url.rstrip('/').split('/')[-1]
-                    title = info.get('title') or ''
-                    auctions.append(AuctionListing(
-                        auction_id=auction_id,
-                        title=title,
-                        url=auction_url,
-                        auctioneer="Unknown",
-                        location="Unknown",
-                        total_lots=0,
-                        closing_date=None,
-                        status="Unknown",
-                        scraped_at=datetime.now().isoformat()
-                    ))
-            except Exception as e:
-                logger.warning(f"Error extracting auctions from page {page_url}: {e}")
-
-        logger.info(f"Discovered {len(auctions)} auctions from {len(pages)} listing pages")
-        return auctions
-
-    def get_auction_list_pages(self) -> List[str]:
-        """Return paginated auction list page URLs by following listing pagination.
-
-        Mirrors the approach used in the legacy scraper: request each
-        /auction/list?page=N page until no auctions are found or pagination ends.
-        """
-        pages = []
-        page_num = 1
-
-        while True:
-            url = f"{self.BASE_URL}/auction/list?page={page_num}" if page_num > 1 else f"{self.BASE_URL}/auction/list"
-            try:
-                resp = self.session.get(url, timeout=15)
-                resp.raise_for_status()
-                soup = BeautifulSoup(resp.content, 'html.parser')
-
-                auction_links = soup.find_all('a', href=re.compile(r'/auction/\d+$'))
-                if not auction_links:
-                    logger.info(f"No auctions found on listing page {page_num}, stopping pagination")
-                    break
-
-                pages.append(url)
-
-                # Check for a 'Next' link to continue pagination
-                next_link = soup.find('a', string=re.compile(r'Next\s*»'))
-                if not next_link:
-                    break
-
-                page_num += 1
-                time.sleep(self.rate_limit)
-            except requests.RequestException as e:
-                logger.error(f"HTTP error fetching listing page {page_num}: {e}")
-                break
-
-        return pages
-
-    def get_auctions_from_page(self, page_url: str) -> List[Dict[str, str]]:
-        """Extract auction URLs and titles from a listing page URL.
-
-        Returns a list of dicts with keys: 'url' and 'title'.
-        """
-        try:
-            resp = self.session.get(page_url, timeout=15)
-            resp.raise_for_status()
-            soup = BeautifulSoup(resp.content, 'html.parser')
-
-            auction_links = soup.find_all('a', href=re.compile(r'/auction/\d+$'))
-            results = []
-            seen = set()
-            for a in auction_links:
-                href = a.get('href')
-                if not href:
-                    continue
-                if href in seen:
-                    continue
-                seen.add(href)
-                full = urljoin(self.BASE_URL, href)
-                title = a.get_text(strip=True) or full
-                results.append({'url': full, 'title': title})
-
-            time.sleep(self.rate_limit)
-            return results
-        except requests.RequestException as e:
-            logger.error(f"Error fetching auctions from {page_url}: {e}")
-            return []
-    
-    def _parse_auction_container(self, container) -> Optional[AuctionListing]:
-        """Parse auction container"""
-        try:
-            # Title and link
-            title_elem = container.find('h4')
-            if not title_elem:
-                return None
-            
-            link_elem = title_elem.find('a', href=True)
-            if not link_elem:
-                return None
-            
-            auction_url = urljoin(self.BASE_URL, link_elem['href'])
-            auction_id = auction_url.rstrip('/').split('/')[-1]
-            title = self._get_text_safe(link_elem)
-            
-            # Auctioneer
-            auctioneer_elem = container.find('strong')
-            auctioneer = self._get_text_safe(auctioneer_elem) or "Unknown"
-            
-            # Location
-            text_content = container.get_text()
-            location = "Unknown"
-            state_match = re.search(r'([A-Z]{2})\s+\d{5}', text_content)
-            if state_match:
-                lines = [line.strip() for line in text_content.split('\n') if line.strip()]
-                for line in lines:
-                    if state_match.group(1) in line:
-                        location = line
-                        break
-            
-            # Lot count
-            total_lots = 0
-            lots_match = re.search(r'(\d+)\s+Lots?\s+Open', text_content, re.IGNORECASE)
-            if lots_match:
-                total_lots = int(lots_match.group(1))
-            
-            # Closing date
-            closing_date = None
-            closing_match = re.search(r'(Begins Closing|Closing)\s+([^\n]+)', text_content)
-            if closing_match:
-                closing_date = closing_match.group(2).strip()
-            
-            # Status
-            status = "Active"
-            if "Closed" in text_content or "Ended" in text_content:
-                status = "Closed"
-            elif "Upcoming" in text_content:
-                status = "Upcoming"
-            
-            return AuctionListing(
-                auction_id=auction_id,
-                title=title,
-                url=auction_url,
-                auctioneer=auctioneer,
-                location=location,
-                total_lots=total_lots,
-                closing_date=closing_date,
-                status=status,
-                scraped_at=datetime.now().isoformat()
-            )
-            
-        except Exception as e:
-            logger.error(f"Error parsing auction: {e}")
-            return None
-    
-    def scrape_auction_items(self, auction_id: str, max_items: Optional[int] = None) -> List[ItemListing]:
-        """Scrape all items from a specific auction"""
-        logger.info(f"Scraping items for auction {auction_id}...")
-        url = f"{self.BASE_URL}/auction/{auction_id}"
+        Fetch an individual item page and extract bid details
         
-        # Fetch auction-level metadata so items can include auction title/url
-        auction_info = self.extract_auction_details(url) or {}
-
-        driver = self._init_driver()
+        Args:
+            item_url: URL of the item detail page
+            
+        Returns:
+            dict: Item details (current_bid, next_required_bid, high_bidder, etc.)
+        """
+        details = {
+            'current_bid': '0.00',
+            'next_required_bid': 'N/A',
+            'high_bidder': 'No bids',
+            'category': 'N/A',
+            'image_url': 'N/A',
+            'item_closing_time': 'N/A',
+            'short_description': 'N/A'
+        }
+        
+        try:
+            response = self.session.get(item_url, timeout=15)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Extract current bid using ID pattern
+            bid_elem = self.find_bid_element(soup, 'lot_current_bid_lot_k-bid')
+            if bid_elem:
+                bid_text = bid_elem.get_text(strip=True)
+                details['current_bid'] = self.parse_money(bid_text)
+                logger.debug(f"Found current bid: {bid_text} -> {details['current_bid']}")
+            
+            # Extract next required bid
+            next_elem = self.find_bid_element(soup, 'lot_next_required_bid_lot_k-bid')
+            if next_elem:
+                next_text = next_elem.get_text(strip=True)
+                details['next_required_bid'] = self.parse_money(next_text)
+            
+            # Extract high bidder
+            bidder_elem = self.find_bid_element(soup, 'lot_current_high_bidder_detail_lot_k-bid')
+            if bidder_elem:
+                bidder_text = bidder_elem.get_text(strip=True)
+                details['high_bidder'] = bidder_text.replace('High Bidder:', '').strip()
+            
+            # Extract category
+            category_elem = soup.find('a', href=re.compile(r'category_ids='))
+            if category_elem:
+                details['category'] = category_elem.get_text(strip=True)
+            
+            # Extract image - skip logos, get actual item images
+            img_elem = soup.find('img', src=True)
+            if img_elem and img_elem.get('src'):
+                img_url = img_elem['src']
+                # Skip logo images - look for item images in specific locations
+                if 'site_logo' not in img_url and 'logo' not in img_url.lower():
+                    if not img_url.startswith('http'):
+                        img_url = urljoin(self.base_url, img_url)
+                    details['image_url'] = img_url
+                else:
+                    # Try to find image in galleria or item image container
+                    item_img = soup.find('img', class_=re.compile(r'galleria|item.*image', re.I))
+                    if not item_img:
+                        # Look for images in kpi-auction-images S3 bucket
+                        item_img = soup.find('img', src=re.compile(r'kpi-auction-images'))
+                    if item_img and item_img.get('src'):
+                        img_url = item_img['src']
+                        if not img_url.startswith('http'):
+                            img_url = urljoin(self.base_url, img_url)
+                        details['image_url'] = img_url
+            
+            # Extract closing time - clean up the format
+            closing_elem = soup.find(string=re.compile(r'Closes|Closing', re.I))
+            if closing_elem:
+                closing_parent = closing_elem.find_parent()
+                if closing_parent:
+                    closing_text = closing_parent.get_text(strip=True)
+                    # Extract date/time patterns like "Sat, Jan 31, 2026 7:00pm CST"
+                    time_match = re.search(r'((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[^,]*,\s*\w+\s+\d+,\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)?\s*[A-Z]{3})', closing_text, re.I)
+                    if not time_match:
+                        # Try simpler pattern: "1/31/2026 7:00 PM"
+                        time_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)?(?:\s*[A-Z]{3})?)', closing_text, re.I)
+                    if time_match:
+                        details['item_closing_time'] = time_match.group(1).strip()
+                    else:
+                        # Fallback: clean up common artifacts
+                        cleaned = closing_text.replace('Closes:', '').replace('Begins Closing In:', '').replace('No Connection!', '').strip()
+                        # Remove countdown timers (format: 18:20:20)
+                        cleaned = re.sub(r'\d{1,2}:\d{2}:\d{2}', '', cleaned).strip()
+                        if cleaned:
+                            details['item_closing_time'] = cleaned
+            
+            # Extract description
+            desc_elem = soup.find('div', class_=re.compile(r'lot.*desc', re.I))
+            if desc_elem:
+                details['short_description'] = desc_elem.get_text(strip=True)[:200]
+                
+        except Exception as e:
+            logger.warning(f"Error fetching item details from {item_url}: {e}")
+        
+        return details
+    
+    def extract_item_from_container(self, container, auction_info):
+        """
+        Extract item details from a container element (listing page or item page)
+        
+        Args:
+            container: BeautifulSoup element containing item info
+            auction_info: Dict with auction metadata
+            
+        Returns:
+            dict: Item details
+        """
+        item = auction_info.copy()
+        
+        # Extract lot number from URL or text
+        lot_number = "N/A"
+        lot_link = container.find('a', href=re.compile(r'/item/(\d+)'))
+        if lot_link and lot_link.get('href'):
+            url_match = re.search(r'/item/(\d+)', lot_link['href'])
+            if url_match:
+                lot_number = url_match.group(1)
+                item['item_url'] = urljoin(self.base_url, lot_link['href'])
+        
+        # Try to extract from text if URL method failed
+        if lot_number == "N/A":
+            lot_text = container.get_text()
+            lot_match = re.search(r'Lot:\s*(\d+\w*)', lot_text, re.I)
+            if lot_match:
+                lot_number = lot_match.group(1)
+        
+        item['lot_number'] = lot_number
+        
+        # Extract title
+        title_elem = container.find(['h2', 'h3', 'h4', 'h5'])
+        if not title_elem:
+            link_candidate = container.find('a', href=re.compile(r'/item/'))
+            if link_candidate and link_candidate.get_text(strip=True):
+                title_text = link_candidate.get_text(strip=True)
+                if 'Click for Details' not in title_text and 'Lot:' not in title_text:
+                    title_elem = link_candidate
+        
+        item['item_title'] = title_elem.get_text(strip=True) if title_elem else "N/A"
+        
+        # ===== CRITICAL FIX: Fetch item detail page to get accurate bid data =====
+        # The listing page containers don't have the bid ID elements - they only exist on item pages
+        if item.get('item_url') and item['item_url'] != "N/A":
+            logger.debug(f"Fetching details for lot {lot_number} from item page...")
+            details = self.fetch_item_details_from_page(item['item_url'])
+            item.update(details)
+        else:
+            # Fallback values if no item URL
+            item['short_description'] = "N/A"
+            item['current_bid'] = "0.00"
+            item['next_required_bid'] = "N/A"
+            item['high_bidder'] = "No bids"
+            item['category'] = "N/A"
+            item['image_url'] = "N/A"
+            item['item_closing_time'] = "N/A"
+        
+        return item
+    
+    def get_auction_details(self, auction_url):
+        """
+        Get basic auction information
+        
+        Args:
+            auction_url: URL of the auction
+            
+        Returns:
+            dict: Auction information
+        """
+        logger.info(f"Fetching auction details: {auction_url}")
+        
+        try:
+            response = self.session.get(auction_url, timeout=15)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Extract auction ID from URL
+            auction_id = "N/A"
+            match = re.search(r'/auction/(\d+)', auction_url)
+            if match:
+                auction_id = match.group(1)
+            
+            # Extract auction title
+            title_elem = soup.find('h1') or soup.find('h2', class_=re.compile(r'auction.*title', re.I))
+            auction_title = title_elem.get_text(strip=True) if title_elem else "N/A"
+            
+            # Extract affiliate/auctioneer - avoid JavaScript code
+            affiliate = "N/A"
+            affiliate_elem = soup.find(string=re.compile(r'Affiliate|Auctioneer', re.I))
+            if affiliate_elem:
+                parent = affiliate_elem.find_parent()
+                if parent:
+                    affiliate_text = parent.get_text(strip=True)
+                    # Skip if it looks like JavaScript
+                    if 'let ' not in affiliate_text and 'var ' not in affiliate_text and 'function' not in affiliate_text:
+                        affiliate = affiliate_text.replace('Affiliate:', '').replace('Auctioneer:', '').strip()
+                        # Take only the first line if multiple lines
+                        if '\n' in affiliate:
+                            affiliate = affiliate.split('\n')[0].strip()
+            
+            # Extract location and phone - parse more carefully
+            location = "N/A"
+            phone = "N/A"
+            location_elem = soup.find(string=re.compile(r'Location|Address', re.I))
+            if location_elem:
+                parent = location_elem.find_parent()
+                if parent:
+                    location_text = parent.get_text(strip=True)
+                    # Remove "Location:" prefix
+                    location_text = location_text.replace('Location:', '').replace('Auction', '').strip()
+                    # Extract phone number if present
+                    phone_match = re.search(r'Phone:\s*([\d\-\(\)\s]+)', location_text)
+                    if phone_match:
+                        phone = phone_match.group(1).strip()
+                        # Remove phone from location
+                        location_text = location_text.replace(phone_match.group(0), '').strip()
+                    # Extract address before "Phone:" or "Lot Categories"
+                    if 'Phone:' in location_text:
+                        location = location_text.split('Phone:')[0].strip()
+                    elif 'Lot Categories:' in location_text:
+                        location = location_text.split('Lot Categories:')[0].strip()
+                    else:
+                        # Take first reasonable chunk (before excessive content)
+                        lines = location_text.split('\n')
+                        if lines:
+                            location = lines[0].strip()
+                        else:
+                            # Limit to first 100 chars to avoid huge blocks
+                            location = location_text[:100].strip()
+            
+            # Extract closing date - avoid terms & conditions
+            closing_date = "N/A"
+            closing_elem = soup.find(string=re.compile(r'Closing\s*Date|Ends|Auction\s*Ends', re.I))
+            if closing_elem:
+                parent = closing_elem.find_parent()
+                if parent:
+                    closing_text = parent.get_text(strip=True)
+                    # Skip if it's terms/conditions text
+                    if 'Inspection' not in closing_text and 'Bidders are' not in closing_text:
+                        # Look for date patterns
+                        date_match = re.search(r'((?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)[^,]*,\s*\w+\s+\d+,\s+\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)?\s*[A-Z]{3})', closing_text, re.I)
+                        if not date_match:
+                            date_match = re.search(r'(\d{1,2}/\d{1,2}/\d{4}\s+\d{1,2}:\d{2}\s*(?:AM|PM)?)', closing_text, re.I)
+                        if date_match:
+                            closing_date = date_match.group(1).strip()
+                        else:
+                            # Clean up and use first line
+                            closing_date = closing_text.replace('Closing Date:', '').replace('Ends:', '').strip()
+                            if '\n' in closing_date:
+                                closing_date = closing_date.split('\n')[0].strip()
+                            # Limit length
+                            if len(closing_date) > 50:
+                                closing_date = closing_date[:50].strip()
+            
+            # Count total items
+            total_items = 0
+            item_links = soup.find_all('a', href=re.compile(r'/item/\d+'))
+            total_items = len(set([link['href'] for link in item_links]))
+            
+            auction_info = {
+                'auction_id': auction_id,
+                'auction_title': auction_title,
+                'auction_url': auction_url,
+                'affiliate': affiliate,
+                'location': location,
+                'phone': phone,
+                'closing_date': closing_date,
+                'total_items': str(total_items),
+                'categories': "N/A"
+            }
+            
+            logger.info(f"  Auction ID: {auction_id}, Title: {auction_title}")
+            return auction_info
+            
+        except Exception as e:
+            logger.error(f"Error getting auction details: {e}")
+            return {
+                'auction_id': 'N/A',
+                'auction_title': 'N/A',
+                'auction_url': auction_url,
+                'affiliate': 'N/A',
+                'location': 'N/A',
+                'phone': 'N/A',
+                'closing_date': 'N/A',
+                'total_items': '0',
+                'categories': 'N/A'
+            }
+    
+    def scrape_auction_items(self, auction_url, max_items=None):
+        """
+        Scrape all items from an auction
+        
+        Args:
+            auction_url: URL of the auction
+            max_items: optional int, stop after this many items have been collected
+            
+        Returns:
+            list: List of item dictionaries
+        """
+        # Get auction info
+        auction_info = self.get_auction_details(auction_url)
         items = []
-
-        try:
-            if driver:
-                driver.get(url)
-                try:
-                    WebDriverWait(driver, 15).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "body"))
-                    )
-                except Exception:
-                    pass
-                time.sleep(2)
-
-                # Scroll to load all items
-                try:
-                    last_height = driver.execute_script("return document.body.scrollHeight")
-                    for _ in range(10):
-                        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                        time.sleep(1.5)
-                        new_height = driver.execute_script("return document.body.scrollHeight")
-                        if new_height == last_height:
-                            break
-                        last_height = new_height
-                except Exception:
-                    # If scrolling isn't supported in this environment, continue
-                    pass
-
-                soup = BeautifulSoup(driver.page_source, 'html.parser')
-            else:
-                # Requests-only fallback
-                resp = self.session.get(url, timeout=15)
-                resp.raise_for_status()
-                soup = BeautifulSoup(resp.content, 'html.parser')
-            
-            # Find lot containers
-            containers = self._find_lot_containers(soup)
-            logger.info(f"Found {len(containers)} items")
-            
-            for idx, container in enumerate(containers):
-                if max_items and idx >= max_items:
-                    break
-
-                item = self._parse_item_container(container, auction_id, auction_info)
-                if not item:
-                    continue
-
-                # If we couldn't extract a current_bid from the listing container,
-                # try fetching the item detail page (requests-only path) to populate missing fields.
-                if (item.current_bid is None or item.current_bid == 0) and item.item_url:
-                    try:
-                        details = self.scrape_item_details(item.item_url)
-                        if details:
-                            # update fields conservatively
-                            if details.get('current_bid') is not None:
-                                item.current_bid = details.get('current_bid')
-                            if details.get('next_required_bid') is not None:
-                                item.next_required_bid = details.get('next_required_bid')
-                            if details.get('high_bidder') is not None:
-                                item.high_bidder = details.get('high_bidder')
-                            if details.get('images'):
-                                item.image_urls = details.get('images')
-                                item.primary_image_url = details.get('images')[0] if details.get('images') else item.primary_image_url
-                            if details.get('description'):
-                                item.description = details.get('description')
-                    except Exception as e:
-                        logger.debug(f"Detail fetch failed for {item.item_url}: {e}")
-
-                items.append(item)
-            
-            logger.info(f"Scraped {len(items)} items")
-            
-        except Exception as e:
-            logger.error(f"Error scraping items: {e}")
-        finally:
-            if driver:
-                try:
-                    driver.quit()
-                except Exception:
-                    pass
         
+        # Navigate through pages
+        page_num = 1
+        while True:
+            if page_num == 1:
+                page_url = auction_url
+            else:
+                page_url = f"{auction_url}?page={page_num}"
+            
+            logger.info(f"  Scraping page {page_num}: {page_url}")
+            
+            try:
+                response = self.session.get(page_url, timeout=15)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.content, 'html.parser')
+                
+                # Find all item containers
+                # Strategy 1: Look for lot headings
+                lot_containers = []
+                lot_headings = soup.find_all(['h4', 'h5', 'h3'], string=re.compile(r'Lot:\s*\d+', re.I))
+                
+                for heading in lot_headings:
+                    container = heading.find_parent(['div', 'article', 'section'])
+                    if container:
+                        lot_containers.append(container)
+                
+                # Strategy 2: Look for item links and get their parent containers
+                if not lot_containers:
+                    item_links = soup.find_all('a', href=re.compile(r'/item/\d+'))
+                    seen = set()
+                    for link in item_links:
+                        parent = link.find_parent(['div', 'article', 'section'])
+                        if parent and id(parent) not in seen:
+                            seen.add(id(parent))
+                            lot_containers.append(parent)
+                
+                if not lot_containers:
+                    logger.info(f"  No items found on page {page_num}")
+                    break
+                
+                logger.info(f"  Found {len(lot_containers)} potential item containers on page {page_num}")
+                
+                # Track seen items by URL to avoid duplicates
+                seen_items = set()
+                
+                # Extract items
+                for container in lot_containers:
+                    try:
+                        item = self.extract_item_from_container(container, auction_info)
+                        if item and item.get('lot_number') != "N/A":
+                            # Deduplicate by item URL
+                            item_url = item.get('item_url', 'N/A')
+                            if item_url != 'N/A' and item_url in seen_items:
+                                logger.debug(f"    Skipping duplicate: {item_url}")
+                                continue
+                            
+                            seen_items.add(item_url)
+                            items.append(item)
+                            self.stats['items_scraped'] += 1
+                            logger.debug(f"    Extracted lot {item.get('lot_number')}: {item.get('item_title')[:50]}")
+                            
+                            # If a max_items limit exists, stop when reached
+                            if max_items is not None and len(items) >= max_items:
+                                logger.info(f"  Reached max_items limit: {max_items}")
+                                return items
+                    except Exception as e:
+                        logger.warning(f"    Error extracting item: {e}")
+                        self.stats['errors'] += 1
+                
+                # Check for next page
+                next_link = soup.find('a', string=re.compile(r'Next\s*»', re.I))
+                if not next_link:
+                    logger.info(f"  No more pages for this auction")
+                    break
+                
+                page_num += 1
+                time.sleep(self.delay)
+                
+            except Exception as e:
+                logger.error(f"  Error on page {page_num}: {e}")
+                self.stats['errors'] += 1
+                break
+        
+        logger.info(f"  Total items from auction: {len(items)}")
         return items
     
-    def _find_lot_containers(self, soup) -> List:
-        """Find all item containers on page"""
-        # Strategy 1: content cards (common template)
-        containers = soup.find_all('article', class_='content-card')
-
-        # Strategy 2: grid columns used in some layouts
-        if not containers:
-            containers = soup.find_all('div', class_=['col-md-4', 'col-sm-6'])
-
-        # Strategy 3: legacy scraper - look for headings with 'Lot: N'
-        if not containers:
-            lot_headings = []
-            for tag in ['h4', 'h5', 'h3', 'h6']:
-                found = soup.find_all(tag, string=re.compile(r'Lot:\s*\d+', re.I))
-                lot_headings.extend(found)
-
-            if lot_headings:
-                containers = []
-                for h in lot_headings:
-                    parent = h.find_parent(['div', 'article', 'section'])
-                    if parent and parent not in containers:
-                        containers.append(parent)
-
-        # Strategy 4: find /auction/ID/item/ID links and use their parent container
-        if not containers:
-            lot_links = soup.find_all('a', href=re.compile(r'/auction/\d+/item/\d+'))
-            seen_containers = set()
-            containers = []
-            for link in lot_links:
-                parent = link.find_parent(['div', 'article', 'section'])
-                if parent and id(parent) not in seen_containers:
-                    seen_containers.add(id(parent))
-                    containers.append(parent)
-
-        # Strategy 5: fallback - find containers that include 'Current Bid' and an image or item link
-        if not containers:
-            candidates = soup.find_all(['div', 'article', 'section'])
-            for container in candidates:
-                try:
-                    if (container.find(string=re.compile(r'Current Bid|Lot:', re.I)) and 
-                        (container.find('img') or container.find('a', href=re.compile(r'/item/')))):
-                        containers.append(container)
-                except Exception:
-                    continue
-
-        # Filter containers to likely item containers to avoid pagination/ads
-        def is_likely_item(c):
+    def get_auction_list_pages(self):
+        """Get all auction listing page URLs"""
+        logger.info("Fetching auction list pages...")
+        pages = []
+        page_num = 1
+        
+        while True:
+            url = f"{self.base_url}/auction/list?page={page_num}" if page_num > 1 else f"{self.base_url}/auction/list"
+            
             try:
-                # Must have an item link or title or bid or an image
-                # Exclude common page chrome / user links
-                hrefs = [a.get('href','') for a in c.find_all('a', href=True)]
-                for h in hrefs:
-                    if h and h.startswith('/user'):
-                        return False
-
-                if c.find('a', href=re.compile(r'/item/')):
-                    return True
-                if c.find(class_=re.compile(r'lot-title|content-card|content-card__title')):
-                    return True
-                if c.select_one('.lot-current-bid'):
-                    return True
-                txt = c.get_text('\n', strip=True)
-                # Avoid matching site chrome like 'Showing 1 to 50', 'Prev', 'Next', 'Register'
-                if re.search(r'Lot:\s*\d+', txt, re.I):
-                    return True
-                return False
-            except Exception:
-                return False
-
-        filtered = [c for c in containers if is_likely_item(c)]
-        # If filtering removed everything, fall back to the original containers
-        if not filtered and containers:
-            return containers
-        return filtered
+                response = self.session.get(url, timeout=15)
+                response.raise_for_status()
+                soup = BeautifulSoup(response.content, 'html.parser')
+                
+                auction_links = soup.find_all('a', href=re.compile(r'/auction/\d+$'))
+                
+                if not auction_links:
+                    break
+                
+                pages.append(url)
+                logger.info(f"Found auction listing page {page_num}")
+                
+                next_link = soup.find('a', string='Next »')
+                if not next_link:
+                    break
+                
+                page_num += 1
+                time.sleep(self.delay)
+                
+            except Exception as e:
+                logger.error(f"Error fetching page {page_num}: {e}")
+                break
+        
+        logger.info(f"Total listing pages: {len(pages)}")
+        return pages
     
-    def _parse_item_container(self, container, auction_id: str, auction_info: dict = None) -> Optional[ItemListing]:
-        """Parse item container using verified selectors"""
+    def get_auctions_from_page(self, page_url):
+        """Extract auction URLs from a listing page"""
+        logger.info(f"Extracting auctions from: {page_url}")
+        auctions = []
+        
         try:
-            auction_info = auction_info or {}
-            # Accept either a container element or a heading/link node; mirror legacy behavior
-            lot_elem = container
-            if getattr(lot_elem, 'name', None) in ('a', 'h4', 'h5', 'h3', 'h2', 'h6'):
-                # find a suitable parent container
-                parent = lot_elem.find_parent(['div', 'article', 'section'])
-                if parent:
-                    container = parent
-                else:
-                    # fallback to the direct parent
-                    container = lot_elem.parent or lot_elem
-            logger.debug("Parsing item container")
-            # Title (required) - try selectors first, then fall back to heading/link heuristics
-            title_elem = None
-            title_elem = container.select_one(self.SELECTORS.get('item_title')) if container else None
-            if not title_elem:
-                title_elem = container.select_one(self.SELECTORS.get('item_title_fallback')) if container else None
-
-            # Fallback: look for heading tags or item link text similar to legacy scraper
-            if not title_elem:
-                for tag in ['h2', 'h3', 'h4', 'h5']:
-                    t = container.find(tag)
-                    if t and t.get_text(strip=True):
-                        title_elem = t
-                        break
-            if not title_elem:
-                # look for a link to the item
-                link_candidate = container.find('a', href=re.compile(r'/item/'))
-                if link_candidate and link_candidate.get_text(strip=True) and 'Click for Details' not in link_candidate.get_text(strip=True):
-                    title_elem = link_candidate
-
-            if not title_elem:
-                # Last-resort: try to infer a title from container text (legacy scraper used similar heuristics)
-                full_text = container.get_text(separator='\n', strip=True)
-                lines = [ln.strip() for ln in full_text.split('\n') if ln.strip()]
-                inferred = None
-                for ln in lines:
-                    # prefer short lines that look like a title (not 'Lot:' or 'Current Bid')
-                    if len(ln) > 3 and not re.search(r'Lot:|Current Bid|Next Required', ln, re.I):
-                        inferred = ln
-                        break
-                if inferred:
-                    logger.info("Using inferred title for container: %s", inferred[:120])
-                    title = inferred
-                else:
-                    logger.warning("No title element found for container; skipping. snippet=%s", str(container)[:200])
-                    return None
-            else:
-                title = self._get_text_safe(title_elem)
+            response = self.session.get(page_url, timeout=15)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, 'html.parser')
             
-            # Extract IDs and attempt to get current bid from container
-            auction_id_extracted = auction_id
-            lot_id = None
-            current_bid = None
-
-            # Try class-based selector first (more general)
-            bid_elem = container.select_one('.lot-current-bid') if container else None
-            if not bid_elem:
-                # Next try id-pattern elements used by template
-                bid_elem = self._find_element_by_id_pattern(container, 'lot_current_bid_lot_k-bid')
-
-            if bid_elem:
-                current_bid = self._parse_currency(self._get_text_safe(bid_elem))
-                element_id = bid_elem.get('id', '')
-                a_id, l_id = self._extract_ids_from_element_id(element_id)
-                if a_id:
-                    auction_id_extracted = a_id
-                if l_id:
-                    lot_id = l_id
+            auction_links = soup.find_all('a', href=re.compile(r'/auction/\d+$'))
             
-            if not lot_id:
-                lot_id = f"lot_{abs(hash(title)) % 1000000}"
-
-            logger.debug("Parsed base item: title=%s lot_id=%s", title, lot_id)
+            for link in auction_links:
+                auction_url = urljoin(self.base_url, link['href'])
+                if auction_url not in auctions:
+                    auctions.append(auction_url)
             
-            # Next required bid
-            next_required_bid = None
-            next_bid_elem = container.select_one('.lot-next-required-bid') if container else None
-            if not next_bid_elem:
-                next_bid_elem = self._find_element_by_id_pattern(container, 'lot_next_required_bid_lot_k-bid')
-            if next_bid_elem:
-                next_required_bid = self._parse_currency(self._get_text_safe(next_bid_elem))
-            
-            # Your max bid
-            your_max_bid = None
-            max_bid_elem = self._find_element_by_id_pattern(container, 'lot_your_current_max_bid_lot_k-bid')
-            if max_bid_elem:
-                your_max_bid = self._parse_currency(self._get_text_safe(max_bid_elem))
-            
-            # High bidder
-            high_bidder = None
-            bidder_elem = self._find_element_by_id_pattern(container, 'lot_current_high_bidder_detail_lot_k-bid')
-            if bidder_elem:
-                high_bidder = self._get_text_safe(bidder_elem)
-            
-            # Winning status
-            is_winning = False
-            placeholder_elem = self._find_element_by_id_pattern(container, 'winning_placeholder_lot_k-bid')
-            if placeholder_elem:
-                classes = ' '.join(placeholder_elem.get('class', []))
-                is_winning = 'winning' in classes.lower()
-            
-            # Description
-            desc_elem = container.select_one(self.SELECTORS['item_description'])
-            description = self._get_text_safe(desc_elem)
-            
-            # Images
-            image_urls = []
-            primary_image_url = ""
-            img_elem = container.select_one(self.SELECTORS['primary_image'])
-            if not img_elem:
-                img_elem = container.select_one(self.SELECTORS['images_fallback'])
-            if img_elem:
-                primary_image_url = img_elem.get('src', '')
-                image_urls.append(primary_image_url)
-            
-            # Closing time
-            closing_elem = container.select_one(self.SELECTORS['closing_time'])
-            closing_time = self._get_text_safe(closing_elem)
-            
-            # Time remaining
-            time_elem = container.select_one(self.SELECTORS['time_remaining'])
-            time_remaining = self._get_text_safe(time_elem)
-            
-            # Bid count
-            bid_count = 0
-            bid_count_elem = container.select_one(self.SELECTORS['bid_count'])
-            if bid_count_elem:
-                bid_text = self._get_text_safe(bid_count_elem)
-                match = re.search(r'(\d+)', bid_text)
-                if match:
-                    bid_count = int(match.group(1))
-            
-            # Item URL: prefer explicit /item/ link; do NOT accept arbitrary anchors (nav/login)
-            item_url = ""
-            item_link = container.find('a', href=re.compile(r'/item/'))
-            if not item_link:
-                # also accept anchors that are explicitly marked as lot-title links
-                item_link = container.find('a', class_=re.compile(r'lot-title|lot-link'))
-
-            if item_link and item_link.get('href'):
-                href = item_link['href']
-                # ignore user/account or pagination anchors
-                if href.startswith('/user') or href.startswith('#'):
-                    item_link = None
-                else:
-                    item_url = urljoin(self.BASE_URL, href)
-            # If there's no clear item URL or lot evidence, treat as non-item
-            has_lot_evidence = False
-            if item_url:
-                has_lot_evidence = True
-            if not has_lot_evidence:
-                # check if container has explicit lot number or lot-title class
-                if container.find(string=re.compile(r'Lot:\s*\d+', re.I)):
-                    has_lot_evidence = True
-                if container.find(class_=re.compile(r'lot-title')):
-                    has_lot_evidence = True
-
-            if not has_lot_evidence:
-                logger.debug("Skipping container without /item/ link or lot evidence")
-                return None
-                # Extract item_id from URL
-                url_parts = item_url.rstrip('/').split('/')
-                if 'item' in url_parts:
-                    item_idx = url_parts.index('item')
-                    if item_idx + 1 < len(url_parts):
-                        item_id = url_parts[item_idx + 1]
-                    else:
-                        item_id = lot_id
-                else:
-                    item_id = lot_id
-            else:
-                item_id = lot_id
-            
-            # Reserve met
-            reserve_met = 'reserve-met' in str(container).lower() or 'reserve met' in str(container).lower()
-            
-            return ItemListing(
-                item_id=item_id,
-                lot_number=lot_id,
-                auction_id=auction_id_extracted or auction_id,
-                title=title,
-                description=description,
-                current_bid=current_bid,
-                next_required_bid=next_required_bid,
-                your_max_bid=your_max_bid,
-                high_bidder=high_bidder,
-                bid_count=bid_count,
-                is_winning=is_winning,
-                reserve_met=reserve_met,
-                image_urls=image_urls,
-                primary_image_url=primary_image_url,
-                closing_time=closing_time,
-                time_remaining=time_remaining,
-                location="",
-                item_url=item_url,
-                auction_title=auction_info.get('auction_title'),
-                auction_url=auction_info.get('auction_url'),
-                scraped_at=datetime.now().isoformat()
-            )
+            logger.info(f"  Found {len(auctions)} unique auctions")
             
         except Exception as e:
-            logger.exception("Error parsing item: %s", e)
+            logger.error(f"Error extracting auctions: {e}")
+        
+        return auctions
+    
+    def scrape_all_auctions(self):
+        """Main scraping method"""
+        self.stats['start_time'] = datetime.now()
+        logger.info("=" * 80)
+        logger.info("Starting K-Bid Auction Scraper (FIXED VERSION)")
+        logger.info("=" * 80)
+        
+        # Get all listing pages
+        list_pages = self.get_auction_list_pages()
+        
+        # Extract auctions from all pages
+        all_auction_urls = []
+        for page_url in list_pages:
+            auctions = self.get_auctions_from_page(page_url)
+            all_auction_urls.extend(auctions)
+            time.sleep(self.delay)
+        
+        # Remove duplicates
+        all_auction_urls = list(set(all_auction_urls))
+        self.stats['auctions_found'] = len(all_auction_urls)
+        
+        logger.info(f"\nFound {len(all_auction_urls)} total auctions to scrape")
+        
+        # Scrape each auction
+        for i, auction_url in enumerate(all_auction_urls, 1):
+            logger.info(f"\n[{i}/{len(all_auction_urls)}] Scraping auction: {auction_url}")
+            items = self.scrape_auction_items(auction_url)
+            self.all_items.extend(items)
+            time.sleep(self.delay)
+        
+        self.stats['end_time'] = datetime.now()
+        
+        # Print summary
+        logger.info("\n" + "=" * 80)
+        logger.info("SCRAPING COMPLETE")
+        logger.info("=" * 80)
+        logger.info(f"Auctions scraped: {self.stats['auctions_found']}")
+        logger.info(f"Items collected: {self.stats['items_scraped']}")
+        logger.info(f"Errors: {self.stats['errors']}")
+        logger.info(f"Duration: {self.stats['end_time'] - self.stats['start_time']}")
+        
+        return self.all_items
+    
+    def save_to_csv(self, filename='kbid_auctions_data.csv'):
+        """Save data to CSV"""
+        if not self.all_items:
+            logger.warning("No data to save!")
             return None
-    
-    def scrape_item_details(self, item_url: str) -> Optional[Dict]:
-        """Scrape full details for a specific item"""
-        logger.info(f"Scraping item: {item_url}")
-        driver = self._init_driver()
-
+        
+        filename = os.path.join(self.run_dir, filename)
+        logger.info(f"Saving {len(self.all_items)} items to {filename}...")
+        
+        # Column order: Logical flow from item details → money → time → links → metadata
+        headers = [
+            'lot_number', 'auction_title', 'item_title', 'short_description',
+            'current_bid', 'next_required_bid', 'high_bidder',
+            'item_closing_time', 'closing_date', 'item_url',
+            'auction_id', 'auction_url', 'location'
+        ]
+        
         try:
-            if driver:
-                driver.get(item_url)
-                try:
-                    WebDriverWait(driver, 15).until(
-                        EC.presence_of_element_located((By.TAG_NAME, "body"))
-                    )
-                except Exception:
-                    pass
-                time.sleep(self.rate_limit)
-                soup = BeautifulSoup(driver.page_source, 'html.parser')
-            else:
-                resp = self.session.get(item_url, timeout=15)
-                resp.raise_for_status()
-                soup = BeautifulSoup(resp.content, 'html.parser')
+            with open(filename, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=headers, extrasaction='ignore')
+                writer.writeheader()
+                writer.writerows(self.all_items)
             
-            details = {'url': item_url, 'scraped_at': datetime.now().isoformat()}
-            
-            # Title
-            title_elem = soup.select_one(self.SELECTORS['item_title'])
-            if not title_elem:
-                title_elem = soup.select_one(self.SELECTORS['item_title_fallback'])
-            details['title'] = self._get_text_safe(title_elem)
-            
-            # Current bid and IDs
-            bid_elem = self._find_element_by_id_pattern(soup, 'lot_current_bid_lot_k-bid')
-            if bid_elem:
-                details['current_bid'] = self._parse_currency(self._get_text_safe(bid_elem))
-                element_id = bid_elem.get('id', '')
-                auction_id, lot_id = self._extract_ids_from_element_id(element_id)
-                details['auction_id'] = auction_id
-                details['lot_id'] = lot_id
-            
-            # Next required bid
-            next_bid_elem = self._find_element_by_id_pattern(soup, 'lot_next_required_bid_lot_k-bid')
-            if next_bid_elem:
-                details['next_required_bid'] = self._parse_currency(self._get_text_safe(next_bid_elem))
-            
-            # Your max bid
-            max_bid_elem = self._find_element_by_id_pattern(soup, 'lot_your_current_max_bid_lot_k-bid')
-            if max_bid_elem:
-                details['your_max_bid'] = self._parse_currency(self._get_text_safe(max_bid_elem))
-            
-            # High bidder
-            bidder_elem = self._find_element_by_id_pattern(soup, 'lot_current_high_bidder_detail_lot_k-bid')
-            if bidder_elem:
-                details['high_bidder'] = self._get_text_safe(bidder_elem)
-            
-            # Winning status
-            placeholder_elem = self._find_element_by_id_pattern(soup, 'winning_placeholder_lot_k-bid')
-            if placeholder_elem:
-                classes = ' '.join(placeholder_elem.get('class', []))
-                details['is_winning'] = 'winning' in classes.lower()
-            
-            # Description
-            desc_elem = soup.select_one(self.SELECTORS['item_description'])
-            details['description'] = self._get_text_safe(desc_elem)
-            
-            # Images
-            img_elems = soup.select(self.SELECTORS['primary_image'])
-            details['images'] = [img.get('src', '') for img in img_elems if img.get('src')]
-            
-            # Closing time
-            closing_elem = soup.select_one(self.SELECTORS['closing_time'])
-            details['closing_time'] = self._get_text_safe(closing_elem)
-            
-            # Time remaining
-            time_elem = soup.select_one(self.SELECTORS['time_remaining'])
-            details['time_remaining'] = self._get_text_safe(time_elem)
-            
-            # Bid count
-            bid_count_elem = soup.select_one(self.SELECTORS['bid_count'])
-            if bid_count_elem:
-                bid_text = self._get_text_safe(bid_count_elem)
-                match = re.search(r'(\d+)', bid_text)
-                details['bid_count'] = int(match.group(1)) if match else 0
-            
-            # Auction title
-            auction_title_elem = soup.select_one(self.SELECTORS['auction_title'])
-            if auction_title_elem:
-                details['auction_title'] = self._get_text_safe(auction_title_elem)
-                details['auction_url'] = urljoin(self.BASE_URL, auction_title_elem.get('href', ''))
-            
-            return details
-            
+            logger.info(f"Data saved to {filename}")
+            return filename
         except Exception as e:
-            logger.error(f"Error scraping item details: {e}")
+            logger.error(f"Error saving CSV: {e}")
             return None
-        finally:
-            if driver:
-                try:
-                    driver.quit()
-                except Exception:
-                    pass
-    
-    def export_to_json(self, data: List, filename: str):
-        """Export data to JSON"""
-        try:
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(
-                    [asdict(item) if hasattr(item, '__dataclass_fields__') else item for item in data],
-                    f,
-                    indent=2,
-                    ensure_ascii=False,
-                    default=str
-                )
-            logger.info(f"Exported to {filename}")
-        except Exception as e:
-            logger.error(f"Export error: {e}")
 
 
 def main():
-    """Example usage"""
-    scraper = ProductionKBidScraper(headless=True, rate_limit=1.5)
+    """Main execution"""
+    print("\n" + "=" * 80)
+    print("K-BID AUCTION SCRAPER - FIXED VERSION")
+    print("=" * 80)
+    print("\nThis version properly extracts current bid prices!")
+    print("It uses the correct ID patterns from K-Bid's HTML structure.\n")
     
-    # Scrape auctions
-    print("Scraping auctions...")
-    auctions = scraper.scrape_auction_list()
-    print(f"Found {len(auctions)} auctions")
+    try:
+        delay = float(input("Enter delay between requests in seconds (default 1.0): ") or "1.0")
+    except ValueError:
+        delay = 1.0
     
-    if auctions:
-        # Scrape first auction
-        print(f"\nScraping items from auction {auctions[0].auction_id}...")
-        items = scraper.scrape_auction_items(auctions[0].auction_id, max_items=5)
-        print(f"Found {len(items)} items")
-        
-        if items:
-            # Show first item
-            item = items[0]
-            print(f"\nSample Item:")
-            print(f"  Title: {item.title}")
-            print(f"  Current Bid: ${item.current_bid}" if item.current_bid else "  No bids yet")
-            print(f"  Next Required: ${item.next_required_bid}" if item.next_required_bid else "")
-            print(f"  High Bidder: {item.high_bidder}" if item.high_bidder else "")
-            print(f"  Winning: {item.is_winning}")
-            print(f"  Bid Count: {item.bid_count}")
-            print(f"  URL: {item.item_url}")
-            
-            # Export
-            scraper.export_to_json(items, 'items.json')
+    output_file = input("Enter output CSV filename (default 'kbid_auctions_data.csv'): ").strip() or "kbid_auctions_data.csv"
+    if not output_file.endswith('.csv'):
+        output_file += '.csv'
+    
+    print("\nStarting scraper...\n")
+    
+    scraper = KBidScraperFixed(delay=delay)
+    scraper.scrape_all_auctions()
+    scraper.save_to_csv(output_file)
+    
+    print(f"\n{'=' * 80}")
+    print("COMPLETE!")
+    print(f"{'=' * 80}")
+    print(f"Data saved to: {scraper.run_dir}")
+    print(f"Total items: {len(scraper.all_items)}")
+    print(f"Check the log file for details: {os.path.join(RESULTS_DIR, 'kbid_scraper.log')}")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
