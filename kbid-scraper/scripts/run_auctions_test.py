@@ -8,7 +8,7 @@ This script will:
 - Save combined results to CSV in the scraper's run directory
 
 Usage (PowerShell):
-  python .\kbid-scraper\scripts\run_auctions_test.py --num-auctions 5 --delay 1 --output test_auctions_full.csv
+  python .\kbid-scraper\scripts\run_auctions_test.py --num-auctions 5 --delay 1 --output test_auctions.csv
 
 Notes:
 - This uses KBidScraperFixed from `scraper_enhanced.py` in the same folder.
@@ -68,11 +68,44 @@ def main():
 
     # Scrape each auction fully (no per-item limit)
     total_items = 0
+    # Prepare output CSV for streaming: write header once, then append rows per auction
+    out_path = os.path.join(scraper.run_dir, args.output)
+    csv_headers = [
+        'lot_number', 'auction_title', 'item_title', 'short_description',
+        'current_bid', 'next_required_bid', 'high_bidder',
+        'item_closing_time', 'closing_date', 'item_url',
+        'auction_id', 'auction_url', 'location'
+    ]
+
+    # Create/overwrite output file and write header
+    try:
+        with open(out_path, 'w', newline='', encoding='utf-8') as fh:
+            import csv as _csv
+            writer = _csv.DictWriter(fh, fieldnames=csv_headers, extrasaction='ignore')
+            writer.writeheader()
+        logger.info(f'Initialized streaming CSV: {out_path}')
+    except Exception as e:
+        logger.error(f'Failed to initialize output CSV {out_path}: {e}')
+        out_path = args.output
+
     for i, auction_url in enumerate(auctions, 1):
         logger.info(f'[{i}/{len(auctions)}] Scraping auction: {auction_url}')
         items = scraper.scrape_auction_items(auction_url)  # no max_items
-        scraper.all_items.extend(items)
-        total_items += len(items)
+        # Extend internal store
+        if items:
+            scraper.all_items.extend(items)
+            total_items += len(items)
+
+            # Append scraped items to CSV immediately
+            try:
+                with open(out_path, 'a', newline='', encoding='utf-8') as fh:
+                    import csv as _csv
+                    writer = _csv.DictWriter(fh, fieldnames=csv_headers, extrasaction='ignore')
+                    writer.writerows(items)
+                logger.info(f'  Appended {len(items)} items to {out_path}')
+            except Exception as e:
+                logger.error(f'  Failed to append items to CSV: {e}')
+
         # Respect delay between auctions
         time.sleep(args.delay)
 

@@ -1,0 +1,5 @@
+{
+  "name": "Auction Flipper AI",
+  "description": "Intelligent auction analysis system using Gemini AI to identify EV+ arbitrage opportunities through real-time market research and profit calculation.",
+  "requestFramePermissions": []
+}

@@ -58,6 +58,7 @@ class KBidScraperFixed:
             'auctions_found': 0,
             'items_scraped': 0,
             'errors': 0,
+            'closed_items_skipped': 0,
             'start_time': None,
             'end_time': None
         }
@@ -82,6 +83,27 @@ class KBidScraperFixed:
             return "0.00"
         except (ValueError, AttributeError):
             return "0.00"
+
+    def clean_labelled_text(self, text, max_len=200):
+        """Clean text by removing common leading labels (e.g., 'Lot Description:', 'Description:',
+        'Affiliate:', 'Location:', etc.), collapsing whitespace, and trimming to max_len.
+
+        Returns 'N/A' if input is falsy.
+        """
+        if not text:
+            return "N/A"
+        try:
+            raw = str(text).strip()
+            # Remove common leading labels (with or without colon), case-insensitive
+            cleaned = re.sub(r'^(?:Lot\s+Description:?|Description:?|Affiliate:?|Auctioneer:?|Location:?|Address:?|Phone:?|Lot:?|Click for Details:?|Item:?)\s*', '', raw, flags=re.I)
+            # Remove stray label-like prefixes that may appear mid-string (e.g., 'Lot Description: Foo')
+            # but prefer only leading labels to avoid removing meaningful content.
+            cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+            if not cleaned:
+                return "N/A"
+            return cleaned[:max_len]
+        except Exception:
+            return "N/A"
     
     def extract_ids_from_element_id(self, element_id):
         """
@@ -121,7 +143,9 @@ class KBidScraperFixed:
             'category': 'N/A',
             'image_url': 'N/A',
             'item_closing_time': 'N/A',
-            'short_description': 'N/A'
+            'short_description': 'N/A',
+            # Indicates whether the lot is currently open for bidding
+            'is_open': True
         }
         
         try:
@@ -151,7 +175,7 @@ class KBidScraperFixed:
             # Extract category
             category_elem = soup.find('a', href=re.compile(r'category_ids='))
             if category_elem:
-                details['category'] = category_elem.get_text(strip=True)
+                details['category'] = self.clean_labelled_text(category_elem.get_text(strip=True), max_len=100)
             
             # Extract image - skip logos, get actual item images
             img_elem = soup.find('img', src=True)
@@ -195,10 +219,40 @@ class KBidScraperFixed:
                         if cleaned:
                             details['item_closing_time'] = cleaned
             
-            # Extract description
+            # Extract description and remove common labels like 'Lot Description:'
             desc_elem = soup.find('div', class_=re.compile(r'lot.*desc', re.I))
             if desc_elem:
-                details['short_description'] = desc_elem.get_text(strip=True)[:200]
+                raw_desc = desc_elem.get_text(separator=' ', strip=True)
+                details['short_description'] = self.clean_labelled_text(raw_desc, max_len=200)
+
+            # --- Determine open/closed status ---
+            # If the page contains clear indicators the lot has been sold/closed/ended,
+            # mark it as closed. Otherwise prefer presence of bidding controls to mark open.
+            closed_indicators = re.compile(r"\b(Sold(?: to)?|Winner|Closed|Ended|Bidding closed|Lot Closed|This lot has ended|Auction Ended|Sold for)\b", re.I)
+            has_closed_text = soup.find(string=closed_indicators)
+
+            # Look for actionable bid buttons/links that indicate the lot is open
+            bid_action = soup.find(['button', 'a'], string=re.compile(r'(Place Bid|Bid Now|Start Bidding|Place a Bid|Bid)', re.I))
+
+            if has_closed_text and not bid_action:
+                details['is_open'] = False
+            else:
+                # If there's no explicit closed text but also no bid actions and the closing
+                # time appears to be in the past, we can conservatively mark closed.
+                if not bid_action:
+                    # Try to interpret item_closing_time if present (best-effort)
+                    try:
+                        ct = details.get('item_closing_time')
+                        if ct and ct != 'N/A':
+                            # A simple heuristic: if the text contains year and time, parse it
+                            dt_match = re.search(r'\d{4}', ct)
+                            if dt_match:
+                                # If parsing fails, assume it's still open (do not block)
+                                pass
+                    except Exception:
+                        pass
+                # default remains True unless clear closed indicators found
+                details['is_open'] = details.get('is_open', True)
                 
         except Exception as e:
             logger.warning(f"Error fetching item details from {item_url}: {e}")
@@ -245,13 +299,22 @@ class KBidScraperFixed:
                 if 'Click for Details' not in title_text and 'Lot:' not in title_text:
                     title_elem = link_candidate
         
-        item['item_title'] = title_elem.get_text(strip=True) if title_elem else "N/A"
+        item['item_title'] = self.clean_labelled_text(title_elem.get_text(strip=True)) if title_elem else "N/A"
         
         # ===== CRITICAL FIX: Fetch item detail page to get accurate bid data =====
         # The listing page containers don't have the bid ID elements - they only exist on item pages
         if item.get('item_url') and item['item_url'] != "N/A":
             logger.debug(f"Fetching details for lot {lot_number} from item page...")
             details = self.fetch_item_details_from_page(item['item_url'])
+            # Skip closed items
+            if details is None or details.get('is_open') is False:
+                logger.info(f"    Skipping closed/ended lot {lot_number} ({item.get('item_url')})")
+                # update stats for skipped closed items
+                try:
+                    self.stats['closed_items_skipped'] += 1
+                except Exception:
+                    pass
+                return None
             item.update(details)
         else:
             # Fallback values if no item URL
@@ -290,7 +353,7 @@ class KBidScraperFixed:
             
             # Extract auction title
             title_elem = soup.find('h1') or soup.find('h2', class_=re.compile(r'auction.*title', re.I))
-            auction_title = title_elem.get_text(strip=True) if title_elem else "N/A"
+            auction_title = self.clean_labelled_text(title_elem.get_text(strip=True), max_len=200) if title_elem else "N/A"
             
             # Extract affiliate/auctioneer - avoid JavaScript code
             affiliate = "N/A"
@@ -305,6 +368,8 @@ class KBidScraperFixed:
                         # Take only the first line if multiple lines
                         if '\n' in affiliate:
                             affiliate = affiliate.split('\n')[0].strip()
+            # Clean affiliate labels
+            affiliate = self.clean_labelled_text(affiliate, max_len=100)
             
             # Extract location and phone - parse more carefully
             location = "N/A"
@@ -335,6 +400,8 @@ class KBidScraperFixed:
                         else:
                             # Limit to first 100 chars to avoid huge blocks
                             location = location_text[:100].strip()
+            # Clean location labels
+            location = self.clean_labelled_text(location, max_len=200)
             
             # Extract closing date - avoid terms & conditions
             closing_date = "N/A"
