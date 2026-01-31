@@ -97,3 +97,67 @@
 2026-01-31 01:01:11,653 - INFO - Output CSV: results\run_20260131_010035_a568fa4c\full_auction_test.csv
 2026-01-31 01:01:11,653 - INFO - Total items saved: 16
 2026-01-31 01:01:11,653 - INFO - Run directory: results\run_20260131_010035_a568fa4c
+2026-01-31 01:38:38,672 - INFO - Starting multi-auction full scrape
+2026-01-31 01:38:38,672 - INFO - Run directory: results\run_20260131_013838_e35dd830
+2026-01-31 01:38:38,672 - INFO - Fetching auction list pages...
+2026-01-31 01:38:41,468 - INFO - Found auction listing page 1
+2026-01-31 01:38:43,951 - INFO - Found auction listing page 2
+2026-01-31 01:38:46,360 - INFO - Found auction listing page 3
+2026-01-31 01:38:46,360 - INFO - Total listing pages: 3
+2026-01-31 01:38:46,360 - INFO - Extracting auctions from: https://www.k-bid.com/auction/list
+2026-01-31 01:38:48,058 - INFO -   Found 50 unique auctions
+2026-01-31 01:38:48,058 - INFO - Collected 5 auctions to scrape
+2026-01-31 01:38:48,058 - INFO - [1/5] Scraping auction: https://www.k-bid.com/auction/63039
+2026-01-31 01:38:48,058 - INFO - Fetching auction details: https://www.k-bid.com/auction/63039
+2026-01-31 01:38:48,700 - INFO -   Auction ID: 63039, Title: Mike's Auto Auction #153
+2026-01-31 01:38:48,700 - INFO -   Scraping page 1: https://www.k-bid.com/auction/63039
+2026-01-31 01:38:49,225 - INFO -   Found 64 potential item containers on page 1
+2026-01-31 01:39:12,481 - INFO -   No more pages for this auction
+2026-01-31 01:39:12,481 - INFO -   Total items from auction: 16
+2026-01-31 01:39:13,491 - INFO - [2/5] Scraping auction: https://www.k-bid.com/auction/62605
+2026-01-31 01:39:13,491 - INFO - Fetching auction details: https://www.k-bid.com/auction/62605
+2026-01-31 01:39:14,237 - INFO -   Auction ID: 62605, Title: H2 Equipment - NEBRASKA Mini Skid Steer and Attachments-----Winchs,Carports,Shop Supplies,Meat Processing & Single Trip Container ------ No Reserves
+2026-01-31 01:39:14,237 - INFO -   Scraping page 1: https://www.k-bid.com/auction/62605
+2026-01-31 01:39:15,070 - INFO -   Found 200 potential item containers on page 1
+2026-01-31 01:40:19,496 - INFO -   Scraping page 2: https://www.k-bid.com/auction/62605?page=2
+2026-01-31 01:40:20,340 - INFO -   Found 200 potential item containers on page 2
+2026-01-31 01:41:25,519 - INFO -   Scraping page 3: https://www.k-bid.com/auction/62605?page=3
+2026-01-31 01:41:26,104 - INFO -   Found 52 potential item containers on page 3
+2026-01-31 01:41:43,668 - INFO -   No more pages for this auction
+2026-01-31 01:41:43,668 - INFO -   Total items from auction: 113
+2026-01-31 01:41:44,675 - INFO - [3/5] Scraping auction: https://www.k-bid.com/auction/62881
+2026-01-31 01:41:44,675 - INFO - Fetching auction details: https://www.k-bid.com/auction/62881
+2026-01-31 01:41:45,244 - INFO -   Auction ID: 62881, Title: Four Wheeler - HotBox - Mini Fork Hydrualic Attachment - Jacks - Log Splitter and More
+2026-01-31 01:41:45,244 - INFO -   Scraping page 1: https://www.k-bid.com/auction/62881
+2026-01-31 01:41:45,873 - INFO -   Found 96 potential item containers on page 1
+2026-01-31 01:42:18,812 - INFO -   No more pages for this auction
+2026-01-31 01:42:18,812 - INFO -   Total items from auction: 24
+2026-01-31 01:42:19,815 - INFO - [4/5] Scraping auction: https://www.k-bid.com/auction/62815
+2026-01-31 01:42:19,815 - INFO - Fetching auction details: https://www.k-bid.com/auction/62815
+2026-01-31 01:42:20,587 - INFO -   Auction ID: 62815, Title: #542 4K UHD and HD TV's/Monitors (40"-90"), 75" NEW IN BOX SMARTBOARD, Projectors, Movie/Projection Screens, Speakers, Amplifiers, Lighting, PC's, A/V Items and more!
+2026-01-31 01:42:20,587 - INFO -   Scraping page 1: https://www.k-bid.com/auction/62815
+2026-01-31 01:42:21,465 - INFO -   Found 200 potential item containers on page 1
+2026-01-31 01:43:28,124 - INFO -   Scraping page 2: https://www.k-bid.com/auction/62815?page=2
+2026-01-31 01:43:28,953 - INFO -   Found 200 potential item containers on page 2
+2026-01-31 01:44:35,213 - INFO -   Scraping page 3: https://www.k-bid.com/auction/62815?page=3
+2026-01-31 01:44:35,719 - INFO -   Found 112 potential item containers on page 3
+2026-01-31 01:45:11,045 - INFO -   No more pages for this auction
+2026-01-31 01:45:11,045 - INFO -   Total items from auction: 128
+2026-01-31 01:45:12,050 - INFO - [5/5] Scraping auction: https://www.k-bid.com/auction/63082
+2026-01-31 01:45:12,051 - INFO - Fetching auction details: https://www.k-bid.com/auction/63082
+2026-01-31 01:45:12,916 - INFO -   Auction ID: 63082, Title: Gold & Silver Coins | Indian Head Eagle, Silver Eagles, 10oz Bars, Morgan Dollars, Gold Nugget, and More!
+2026-01-31 01:45:12,916 - INFO -   Scraping page 1: https://www.k-bid.com/auction/63082
+2026-01-31 01:45:13,784 - INFO -   Found 200 potential item containers on page 1
+2026-01-31 01:46:32,347 - INFO -   Scraping page 2: https://www.k-bid.com/auction/63082?page=2
+2026-01-31 01:46:33,193 - INFO -   Found 200 potential item containers on page 2
+2026-01-31 01:48:19,459 - INFO -   Scraping page 3: https://www.k-bid.com/auction/63082?page=3
+2026-01-31 01:48:20,419 - INFO -   Found 112 potential item containers on page 3
+2026-01-31 01:49:09,537 - INFO -   No more pages for this auction
+2026-01-31 01:49:09,537 - INFO -   Total items from auction: 128
+2026-01-31 01:49:10,553 - INFO - Saving 409 items to results\run_20260131_013838_e35dd830\test_auctions_full.csv...
+2026-01-31 01:49:10,626 - INFO - Data saved to results\run_20260131_013838_e35dd830\test_auctions_full.csv
+2026-01-31 01:49:10,626 - INFO - Multi-auction full scrape complete
+2026-01-31 01:49:10,626 - INFO - Auctions scraped: 5
+2026-01-31 01:49:10,626 - INFO - Total items scraped: 409
+2026-01-31 01:49:10,626 - INFO - Output CSV: results\run_20260131_013838_e35dd830\test_auctions_full.csv
+2026-01-31 01:49:10,642 - INFO - Run directory: results\run_20260131_013838_e35dd830
