@@ -1,20 +1,15 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# Auction Flipper Dashboard
 
-# Run and deploy your AI Studio app
+The dashboard is a thin client for the canonical Python valuation engine. It does not contain market-provider credentials or independent profit math.
 
-This contains everything you need to run your app locally.
+```powershell
+# From the repository root
+python .\serve_engine.py
 
-View your app in AI Studio: https://ai.studio/apps/drive/1IwgBxEd36__8zdG390yhUgfve0VrzsM2
+# In another terminal
+cd .\auction-flipper-ai
+npm install
+npm run dev
+```
 
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+The API defaults to `http://127.0.0.1:8000`. Set `VITE_AUCTION_API_URL` only when the backend runs elsewhere. Configure eBay and Gemini credentials on the backend process, never in a Vite environment variable.

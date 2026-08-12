@@ -22,6 +22,8 @@ export interface MarketResearch {
   conditionNotes: string;
   compLinks: string[]; // URLs found during search
   lastUpdated: string;
+  confidence?: number;
+  soldCompCount?: number;
 }
 
 export interface ProfitAnalysis {
@@ -30,9 +32,11 @@ export interface ProfitAnalysis {
   netProfit: number;
   roi: number; // Percentage
   opportunityScore: number; // 0-100
-  recommendation: 'STRONG BUY' | 'BUY' | 'MAYBE' | 'PASS';
+  recommendation: 'STRONG_BUY' | 'STRONG BUY' | 'BUY' | 'WATCH' | 'MAYBE' | 'PASS' | 'RESEARCH';
   riskScore: number; // 1-10
   riskFactors: string[];
+  maximumBid?: number;
+  breakEvenSellPrice?: number;
 }
 
 export interface AnalyzedItem extends AuctionItem {
@@ -41,13 +45,6 @@ export interface AnalyzedItem extends AuctionItem {
   status: 'pending' | 'analyzing' | 'complete' | 'error';
   error?: string;
   deepAnalysis?: string; // For the "Thinking" model output
-}
-
-export interface Settings {
-  shippingDefault: number;
-  platformFeeRate: number; // e.g., 0.13 for eBay
-  minRoi: number;
-  minProfit: number;
 }
 
 export interface ChatMessage {

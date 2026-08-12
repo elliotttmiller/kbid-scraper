@@ -19,8 +19,11 @@ const AnalysisTable: React.FC<AnalysisTableProps> = ({ items, onAnalyze, onViewD
 
   const getRecommendationBadge = (rec: string) => {
     switch (rec) {
+      case 'STRONG_BUY':
       case 'STRONG BUY': return <span className="px-2 py-1 rounded text-xs font-bold bg-green-900/50 text-green-400 border border-green-800">Strong</span>;
       case 'BUY': return <span className="px-2 py-1 rounded text-xs font-bold bg-blue-900/50 text-blue-400 border border-blue-800">Good</span>;
+      case 'RESEARCH': return <span className="px-2 py-1 rounded text-xs font-bold bg-cyan-900/50 text-cyan-300 border border-cyan-800">Research</span>;
+      case 'WATCH':
       case 'MAYBE': return <span className="px-2 py-1 rounded text-xs font-bold bg-amber-900/50 text-amber-400 border border-amber-800">Fair</span>;
       default: return <span className="px-2 py-1 rounded text-xs font-bold bg-slate-800 text-slate-400 border border-slate-700">Pass</span>;
     }

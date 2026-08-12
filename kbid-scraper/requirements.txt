@@ -1,2 +1,5 @@
 requests>=2.28.0
 beautifulsoup4>=4.11.0
+cloudscraper>=1.2.71
+lxml>=5.0.0
+pgeocode>=0.5.0

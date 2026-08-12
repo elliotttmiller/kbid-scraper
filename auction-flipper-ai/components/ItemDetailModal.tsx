@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AnalyzedItem } from '../types';
 import { X, ExternalLink, ShieldAlert, BrainCircuit, Check, Image as ImageIcon } from 'lucide-react';
-import { performDeepRiskAnalysis } from '../services/geminiService';
+import { deepRiskAnalysis } from '../services/apiClient';
 
 interface ItemDetailModalProps {
   item: AnalyzedItem | null;
@@ -11,17 +11,19 @@ interface ItemDetailModalProps {
 
 const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onUpdateItem }) => {
   const [isThinking, setIsThinking] = useState(false);
+  const [deepAnalysisError, setDeepAnalysisError] = useState<string | null>(null);
 
   if (!item) return null;
 
   const handleDeepAnalysis = async () => {
     setIsThinking(true);
+    setDeepAnalysisError(null);
     try {
-      const result = await performDeepRiskAnalysis(item);
+      const result = await deepRiskAnalysis(item);
       onUpdateItem({ ...item, deepAnalysis: result });
     } catch (e) {
       console.error(e);
-      alert("Deep analysis failed. Please try again.");
+      setDeepAnalysisError('Deep analysis failed. Please try again.');
     } finally {
       setIsThinking(false);
     }
@@ -84,6 +86,14 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onUpda
                     {item.profitAnalysis?.roi.toFixed(1)}%
                   </div>
                 </div>
+                <div>
+                  <div className="text-xs text-slate-500">Maximum Bid</div>
+                  <div className="text-xl font-bold text-blue-300">${(item.profitAnalysis?.maximumBid || 0).toFixed(2)}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-slate-500">Total Cost</div>
+                  <div className="text-xl font-medium text-slate-300">${(item.profitAnalysis?.totalCost || 0).toFixed(2)}</div>
+                </div>
               </div>
             </div>
 
@@ -91,21 +101,21 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onUpda
                <h3 className="text-lg font-semibold mb-4 text-slate-200">Market Research</h3>
                <div className="space-y-3 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Retail Price (New)</span>
+                    <span className="text-slate-500">Upper Evidence Price</span>
                     <span className="font-medium text-slate-300">${item.marketResearch?.retailPrice.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">Used Market Avg</span>
+                    <span className="text-slate-500">Median Evidence Price</span>
                     <span className="font-medium text-slate-300">${item.marketResearch?.usedPrice.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-500">eBay Sold Avg</span>
+                    <span className="text-slate-500">Verified Sold Median</span>
                     <span className="font-medium text-slate-300">${item.marketResearch?.ebaySoldAvg.toFixed(2)}</span>
                   </div>
                   
                   <div className="pt-2 border-t border-slate-800 mt-2">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-slate-500">Demand Score</span>
+                    <span className="text-slate-500">Evidence Confidence</span>
                       <div className="flex gap-1">
                         {[...Array(10)].map((_, i) => (
                           <div key={i} className={`w-2 h-2 rounded-full ${i < (item.marketResearch?.demandScore || 0) ? 'bg-blue-500' : 'bg-slate-700'}`} />
@@ -113,7 +123,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onUpda
                       </div>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-500">Liquidity Score</span>
+                      <span className="text-slate-500">Liquidity Proxy</span>
                       <div className="flex gap-1">
                         {[...Array(10)].map((_, i) => (
                           <div key={i} className={`w-2 h-2 rounded-full ${i < (item.marketResearch?.liquidityScore || 0) ? 'bg-green-500' : 'bg-slate-700'}`} />
@@ -149,7 +159,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onUpda
              </div>
           </div>
 
-          {/* Right Column: AI Analysis */}
+          {/* Right Column: deterministic risk analysis */}
           <div className="space-y-6 flex flex-col h-full">
             <div className="bg-gradient-to-br from-slate-900 to-indigo-950/30 border border-indigo-900/50 p-5 rounded-lg">
                <div className="flex items-center gap-2 mb-3">
@@ -157,7 +167,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onUpda
                  <h3 className="font-semibold text-indigo-200">Risk Assessment</h3>
                </div>
                <div className="text-sm text-indigo-300 mb-3">
-                 Risk Score: <span className="font-bold">{item.profitAnalysis?.riskScore}/10</span>
+                 Risk Score: <span className="font-bold">{item.profitAnalysis?.riskScore}/100</span>
                </div>
                <ul className="space-y-1">
                  {item.profitAnalysis?.riskFactors.map((risk, i) => (
@@ -173,7 +183,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onUpda
               <div className="flex items-center justify-between mb-4">
                  <div className="flex items-center gap-2">
                    <BrainCircuit className="text-purple-400" size={20} />
-                   <h3 className="font-semibold text-slate-200">Deep AI Analysis</h3>
+                   <h3 className="font-semibold text-slate-200">Detailed Risk Report</h3>
                  </div>
                  {!item.deepAnalysis && (
                    <button 
@@ -181,7 +191,7 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onUpda
                     disabled={isThinking}
                     className="text-xs bg-purple-600 hover:bg-purple-700 text-white px-3 py-1.5 rounded-md transition-all flex items-center gap-2 disabled:opacity-50 shadow-md shadow-purple-900/20"
                    >
-                     {isThinking ? 'Thinking...' : 'Run Deep Scan'}
+                     {isThinking ? 'Calculating...' : 'Analyze Risks'}
                    </button>
                  )}
               </div>
@@ -190,7 +200,11 @@ const ItemDetailModal: React.FC<ItemDetailModalProps> = ({ item, onClose, onUpda
                 {isThinking ? (
                   <div className="flex flex-col items-center justify-center h-full text-slate-500 gap-3">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
-                    <p className="text-xs">Analyzing market saturation, shipping risks, and hidden costs...</p>
+                    <p className="text-xs">Calculating evidence, downside, fees, and condition risks...</p>
+                  </div>
+                ) : deepAnalysisError ? (
+                  <div className="flex items-center gap-2 text-xs text-red-400 bg-red-900/20 border border-red-800/40 rounded px-3 py-2">
+                    <span>{deepAnalysisError}</span>
                   </div>
                 ) : item.deepAnalysis ? (
                   <div className="whitespace-pre-wrap">{item.deepAnalysis}</div>

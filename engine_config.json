@@ -1,0 +1,58 @@
+{
+  "costs": {
+    "buyers_premium_rate": 0.18,
+    "sales_tax_rate": 0.0825,
+    "platform_fee_rate": 0.135,
+    "platform_fixed_fee": 0.4,
+    "pickup_cost": 18.0,
+    "outbound_shipping": 15.0,
+    "packaging_cost": 4.0,
+    "labor_hours": 0.75,
+    "hourly_labor_rate": 20.0,
+    "storage_cost": 3.0,
+    "refurbishment_reserve": 0.0,
+    "return_rate": 0.08,
+    "return_loss_rate": 0.35
+  },
+  "decisions": {
+    "minimum_comps": 3,
+    "minimum_confidence": 0.45,
+    "target_roi": 0.35,
+    "minimum_profit": 35.0,
+    "strong_buy_score": 78.0,
+    "buy_score": 62.0,
+    "watch_score": 45.0,
+    "maximum_risk_score": 72.0,
+    "exclude_category_terms": [
+      "furniture", "mattress", "sofa", "couch", "loveseat", "recliner", "bed frame",
+      "headboard", "nightstand", "dresser", "wardrobe", "armoire", "table", "desk",
+      "chair", "stool", "cabinet", "bookcase", "shelf", "shelving", "major appliance",
+      "refrigerator", "fridge", "freezer", "dishwasher", "washing machine", "washer",
+      "clothes dryer", "microwave", "range oven", "stove", "air conditioner",
+      "air conditioning unit"
+    ]
+  },
+  "market": {
+    "cache_ttl_hours": 24,
+    "max_comps_per_provider": 20,
+    "active_listing_discount": 0.82,
+    "stale_after_days": 120,
+    "scenario_probabilities": [0.25, 0.5, 0.25],
+    "gemini_model": "gemini-2.5-flash",
+    "gemini_max_output_tokens": 1200,
+    "gemini_concurrency": 2,
+    "gemini_triage_enabled": true,
+    "gemini_triage_model": "gemini-3.1-flash-lite",
+    "gemini_triage_input_limit": 100,
+    "gemini_triage_min_candidates": 50,
+    "gemini_triage_max_candidates": 50,
+    "gemini_triage_max_output_tokens": 4000
+  },
+  "runtime": {
+    "workers": 6,
+    "request_timeout_seconds": 15.0,
+    "retry_attempts": 3,
+    "retry_backoff_seconds": 0.5,
+    "database_path": "results/shared/cache/auction-engine.sqlite3"
+  }
+}

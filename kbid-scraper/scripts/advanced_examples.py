@@ -5,7 +5,18 @@ This file demonstrates various ways to use the scraper
 for different needs and use cases.
 """
 
-from kbid_scraper import KBidScraper
+import os
+import sys
+
+# Ensure local package import
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+import scraper_enhanced as se
+KBidScraper = se.KBidScraperFixed
+
 import pandas as pd
 from datetime import datetime
 

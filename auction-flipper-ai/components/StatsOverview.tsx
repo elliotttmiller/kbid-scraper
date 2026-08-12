@@ -26,7 +26,7 @@ const StatsOverview: React.FC<StatsOverviewProps> = ({ items }) => {
     ? analyzedItems.reduce((acc, i) => acc + (i.profitAnalysis?.roi || 0), 0) / analyzedItems.length
     : 0;
   
-  const strongBuys = analyzedItems.filter(i => i.profitAnalysis?.recommendation === 'STRONG BUY').length;
+  const strongBuys = analyzedItems.filter(i => ['STRONG BUY', 'STRONG_BUY'].includes(i.profitAnalysis?.recommendation || '')).length;
   const buys = analyzedItems.filter(i => i.profitAnalysis?.recommendation === 'BUY').length;
 
   return (

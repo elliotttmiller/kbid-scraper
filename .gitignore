@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.env
+.env.local
+auction-flipper-ai/node_modules/
+auction-flipper-ai/dist/
+results/*.sqlite3
+results/verification_*
+results/*_server.*.log
+results/runs/
+results/shared/
+results/latest.json
+kbid-scraper/results/

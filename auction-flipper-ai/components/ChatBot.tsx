@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { MessageSquare, Send, Minimize2, Maximize2, Loader2, Bot } from 'lucide-react';
-import { chatWithAI } from '../services/geminiService';
+import { portfolioChat } from '../services/apiClient';
 import { AnalyzedItem } from '../types';
 
 interface ChatBotProps {
@@ -15,7 +15,7 @@ interface Message {
 const ChatBot: React.FC<ChatBotProps> = ({ analyzedItems }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
-    { role: 'model', text: "Hello! I've analyzed your auction data. Ask me about profitable items, risks, or specific lots." }
+    { role: 'model', text: "I can summarize your analyzed lots, expected profit, risk, and bid limits." }
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -36,25 +36,12 @@ const ChatBot: React.FC<ChatBotProps> = ({ analyzedItems }) => {
     setIsLoading(true);
 
     try {
-      // Prepare context summary
-      const context = analyzedItems
-        .filter(i => i.status === 'complete' && i.profitAnalysis)
-        .map(i => `Lot ${i.lotNumber}: ${i.title} (Profit: $${i.profitAnalysis?.netProfit.toFixed(0)}, ROI: ${i.profitAnalysis?.roi.toFixed(0)}%, Rec: ${i.profitAnalysis?.recommendation})`)
-        .join('\n');
-
-      const historyForApi = messages.map(m => ({
-        role: m.role,
-        parts: [{ text: m.text }]
-      }));
-      // Add current user message
-      historyForApi.push({ role: 'user', parts: [{ text: userMsg }] });
-
-      const responseText = await chatWithAI(historyForApi, context);
+      const responseText = await portfolioChat(analyzedItems, userMsg);
       
       setMessages(prev => [...prev, { role: 'model', text: responseText || "I couldn't generate a response." }]);
     } catch (error) {
       console.error(error);
-      setMessages(prev => [...prev, { role: 'model', text: "Sorry, I encountered an error connecting to Gemini." }]);
+      setMessages(prev => [...prev, { role: 'model', text: "The valuation service is unavailable. Confirm the backend is running." }]);
     } finally {
       setIsLoading(false);
     }
@@ -67,7 +54,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ analyzedItems }) => {
         className="fixed bottom-6 right-6 bg-blue-600 hover:bg-blue-500 text-white p-4 rounded-full shadow-lg shadow-blue-900/20 transition-transform hover:scale-105 z-40 flex items-center gap-2 border border-blue-500"
       >
         <MessageSquare size={24} />
-        <span className="font-medium hidden sm:inline">AI Assistant</span>
+        <span className="font-medium hidden sm:inline">Portfolio Summary</span>
       </button>
     );
   }
@@ -78,7 +65,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ analyzedItems }) => {
       <div className="bg-blue-600 text-white p-4 flex justify-between items-center border-b border-blue-700">
         <div className="flex items-center gap-2">
           <Bot size={20} />
-          <h3 className="font-semibold">Arbitrage Assistant</h3>
+          <h3 className="font-semibold">Portfolio Summary</h3>
         </div>
         <button onClick={() => setIsOpen(false)} className="hover:bg-blue-700 p-1 rounded">
           <Minimize2 size={18} />
@@ -102,7 +89,7 @@ const ChatBot: React.FC<ChatBotProps> = ({ analyzedItems }) => {
            <div className="flex justify-start">
              <div className="bg-slate-800 p-3 rounded-lg border border-slate-700 shadow-sm rounded-bl-none flex items-center gap-2 text-slate-400 text-sm">
                <Loader2 size={16} className="animate-spin" />
-               Thinking...
+               Calculating...
              </div>
            </div>
         )}

@@ -28,7 +28,7 @@ class Config:
     
     # Google AI API
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_MODEL = "gemini-2.0-flash-exp"  # Latest fast model
+    GEMINI_MODEL = "gemini-2.5-flash"
     
     # Cost parameters (K-Bid auction)
     BUYERS_PREMIUM_RATE = 0.18  # 18% buyer's premium

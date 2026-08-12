@@ -8,7 +8,7 @@ Customize these values to match your business model and risk tolerance
 # ============================================================================
 
 # Gemini API Configuration
-GEMINI_MODEL = "gemini-2.0-flash-exp"  # Or "gemini-1.5-pro" for higher quality
+GEMINI_MODEL = "gemini-2.5-flash"
 RATE_LIMIT_RPM = 15  # Requests per minute (conservative)
 
 # Research Quality Settings

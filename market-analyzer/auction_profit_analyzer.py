@@ -184,7 +184,7 @@ class AuctionDataParser:
 class GeminiMarketResearcher:
     """Use Gemini API for intelligent market research"""
     
-    def __init__(self, api_key: str, model: str = "gemini-2.0-flash-exp"):
+    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
         """Initialize Gemini API"""
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel(model)

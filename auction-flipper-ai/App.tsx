@@ -1,8 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { AnalyzedItem, AuctionItem, AuctionGroupSummary } from './types';
-import { quickScanItems, batchResearchItems, quickScanItem, researchItemMarket } from './services/geminiService';
-import { calculateProfitability } from './services/analysis';
-import { DEFAULT_SETTINGS } from './constants';
+import { analyzeItems as analyzeAuctionItems } from './services/apiClient';
 import FileUpload from './components/FileUpload';
 import AnalysisTable from './components/AnalysisTable';
 import StatsOverview from './components/StatsOverview';
@@ -26,6 +24,7 @@ const App: React.FC = () => {
   // --- Derived State: Group Aggregation ---
   const auctionGroups = useMemo(() => {
     const groups: Record<string, AuctionGroupSummary> = {};
+    const roiTotals: Record<string, number> = {};
 
     items.forEach(item => {
       if (!groups[item.groupName]) {
@@ -40,6 +39,7 @@ const App: React.FC = () => {
           coverImage: item.imageUrl, // Use first item's image as cover
           location: item.location
         };
+        roiTotals[item.groupName] = 0;
       }
 
       const g = groups[item.groupName];
@@ -51,6 +51,7 @@ const App: React.FC = () => {
       if (item.status === 'complete' && item.profitAnalysis) {
         g.analyzedCount++;
         g.totalProfit += item.profitAnalysis.netProfit;
+        roiTotals[item.groupName] += item.profitAnalysis.roi;
         
         // Update best item
         if (!g.bestItem || (item.profitAnalysis.netProfit > (g.bestItem.profitAnalysis?.netProfit || 0))) {
@@ -61,10 +62,8 @@ const App: React.FC = () => {
 
     // Finalize Averages and Status
     return Object.values(groups).map(g => {
-      const groupItems = items.filter(i => i.groupName === g.groupName && i.status === 'complete');
-      if (groupItems.length > 0) {
-        const totalRoi = groupItems.reduce((acc, i) => acc + (i.profitAnalysis?.roi || 0), 0);
-        g.avgRoi = totalRoi / groupItems.length;
+      if (g.analyzedCount > 0) {
+        g.avgRoi = roiTotals[g.groupName] / g.analyzedCount;
         g.status = g.analyzedCount === g.totalItems ? 'complete' : g.status;
       }
       return g;
@@ -87,31 +86,14 @@ const App: React.FC = () => {
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'analyzing' } : i));
     
     try {
-      // 1. Quick Scan
-      let currentItem = { ...item };
-      // Only run quick scan if we really need it, otherwise trust the prompt injection in market research
-      if (currentItem.category === 'Uncategorized' || !currentItem.condition || currentItem.condition === 'Used') {
-         const quickData = await quickScanItem(currentItem);
-         currentItem.category = quickData.category !== 'Unknown' && quickData.category ? quickData.category : currentItem.category;
-         currentItem.condition = quickData.condition !== 'Unknown' && quickData.condition ? quickData.condition : currentItem.condition;
-      }
-
-      // 2. Research
-      const research = await researchItemMarket(currentItem);
-      
-      // 3. Profit Calc
-      const profitAnalysis = calculateProfitability(currentItem, research, DEFAULT_SETTINGS);
-
-      setItems(prev => prev.map(i => i.id === item.id ? { 
-        ...currentItem, 
-        marketResearch: research,
-        profitAnalysis,
-        status: 'complete' 
-      } : i));
+      const [analyzed] = await analyzeAuctionItems([item]);
+      if (!analyzed) throw new Error('Backend returned no analysis result');
+      setItems(prev => prev.map(i => i.id === item.id ? analyzed : i));
 
     } catch (error) {
       console.error(`Error analyzing item ${item.lotNumber}:`, error);
-      setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', error: 'Analysis Failed' } : i));
+      const message = error instanceof Error ? error.message : 'Analysis Failed';
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, status: 'error', error: message } : i));
     }
   };
 
@@ -132,9 +114,7 @@ const App: React.FC = () => {
       ? items.filter(i => i.groupName === activeGroup && i.status === 'pending')
       : items.filter(i => i.status === 'pending');
     
-    // Config: batch processing - run quickScan and lightweight market research in batches
-    const BATCH_SIZE = 10; // number of items per LLM batch - tune for tokens/timeouts
-    const BATCH_DELAY = 1000;
+    const BATCH_SIZE = 25;
 
     for (let i = 0; i < targetItems.length; i += BATCH_SIZE) {
       if (!isAnalyzingRef.current) break; // Check for cancellation
@@ -161,38 +141,18 @@ const App: React.FC = () => {
       }));
 
       try {
-        // 1) Batch quick-scan (N -> 1 call)
-        const quickResults = await quickScanItems(payload);
-        quickResults.forEach((qr, idx) => {
-          if (qr && qr.category && qr.category !== 'Unknown') batch[idx].category = qr.category;
-          if (qr && qr.condition && qr.condition !== 'Unknown') batch[idx].condition = qr.condition;
-        });
-
-        // 2) Lightweight batch market research (no web grounding) - cheaper
-        const marketResults = await batchResearchItems(payload, false);
-
-        // 3) Compute profit analysis and update items
-        const updatedItems = batch.map((orig, idx) => {
-          const research = marketResults[idx];
-          const profitAnalysis = calculateProfitability(orig as any, research as any, DEFAULT_SETTINGS);
-          return { ...orig, marketResearch: research, profitAnalysis, status: 'complete' } as AnalyzedItem;
-        });
-
-        // Apply updates to global state
+        const updatedItems = await analyzeAuctionItems(payload);
+        const updatesById = new Map(updatedItems.map(updated => [updated.id, updated]));
         setItems(prev => prev.map(it => {
-          const u = updatedItems.find(ui => ui.id === it.id);
+          const u = updatesById.get(it.id);
           return u ? { ...it, ...u } : it;
         }));
 
       } catch (err) {
         console.error('Batch analysis error:', err);
-        // Fallback: analyze items individually (safer)
-        await Promise.all(batch.map(item => analyzeItem(item)));
-      }
-
-      // Rate limiting delay between batches
-      if (i + BATCH_SIZE < targetItems.length && isAnalyzingRef.current) {
-         await new Promise(r => setTimeout(r, BATCH_DELAY));
+        const message = err instanceof Error ? err.message : 'Batch analysis failed';
+        const failedIds = new Set(batch.map(item => item.id));
+        setItems(prev => prev.map(item => failedIds.has(item.id) ? { ...item, status: 'error', error: message } : item));
       }
     }
     
@@ -218,7 +178,7 @@ const App: React.FC = () => {
             </span>
           </div>
           <div className="text-sm text-slate-400 font-medium">
-            Powered by Gemini AI
+            Evidence-backed valuation engine
           </div>
         </div>
       </header>
@@ -289,7 +249,7 @@ const App: React.FC = () => {
                  onClick={() => handleDataLoaded([
                    { id: '1', lotNumber: '101', title: 'Sony WH-1000XM5', groupName: 'Electronics Liquidation - Jan', description: 'Open box', currentBid: 120.00, category: 'Electronics', condition: 'Open Box', imageUrl: 'https://images.unsplash.com/photo-1618366712010-f4ae9c647dcb?auto=format&fit=crop&q=80&w=200', location: 'New York, NY' },
                    { id: '2', lotNumber: '102', title: 'Dyson V15', groupName: 'Electronics Liquidation - Jan', description: 'Used', currentBid: 250.00, category: 'Home', condition: 'Used', imageUrl: 'https://images.unsplash.com/photo-1558317374-a3545eca640e?auto=format&fit=crop&q=80&w=200', location: 'Austin, TX' },
-                   { id: '3', lotNumber: '103', title: 'Aeron Chair', groupName: 'Office Surplus #44', description: 'Damaged', currentBid: 300.00, category: 'Furniture', condition: 'Damaged', location: 'Seattle, WA' },
+                   { id: '3', lotNumber: '103', title: 'Milwaukee M18 Fuel Impact Wrench', groupName: 'Contractor Tool Liquidation', description: 'Used, tool only', currentBid: 65.00, category: 'Power Tools/Shop Equipment', condition: 'Used', location: 'Plymouth, MN' },
                  ])}
                  className="text-blue-400 font-medium hover:text-blue-300 underline decoration-blue-500/30 underline-offset-4"
                >

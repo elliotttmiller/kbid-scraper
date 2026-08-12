@@ -1,6 +1,6 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import Papa from 'papaparse';
-import { Upload, FileText, FolderPlus } from 'lucide-react';
+import { FileText, FolderPlus, AlertCircle } from 'lucide-react';
 import { AuctionItem } from '../types';
 
 interface FileUploadProps {
@@ -9,12 +9,29 @@ interface FileUploadProps {
 
 const FileUpload: React.FC<FileUploadProps> = ({ onDataLoaded }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      setParseError(null);
       parseCSV(file);
     }
+  };
+
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files?.[0];
+    if (file && file.name.endsWith('.csv')) {
+      setParseError(null);
+      parseCSV(file);
+    } else if (file) {
+      setParseError('Only .csv files are supported.');
+    }
+  };
+
+  const handleDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
   };
 
   const cleanTitle = (rawTitle: string, description: string, location: string = ''): string => {
@@ -67,10 +84,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataLoaded }) => {
           const description = row['short_description'] || '';
           const location = row['location']; // Used for cleaning title
           
-          // Special handling: Some scrapers put the Auction Title in the item_title column
-          const finalTitle = (rawTitle === groupName || rawTitle.includes('Consignment Auction'))
-            ? cleanTitle(rawTitle, description, location)
-            : cleanTitle(rawTitle, description, location);
+          const finalTitle = cleanTitle(rawTitle, description, location);
 
           // Pricing
           const bidRaw = row['current_bid'] || '0';
@@ -82,7 +96,7 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataLoaded }) => {
           const imageUrl = row['image_url'] || row['image']; 
           
           return {
-            id: `item-${lotNumber}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+            id: `item-${lotNumber}-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`,
             lotNumber: lotNumber,
             title: finalTitle,
             groupName: groupName,
@@ -103,15 +117,17 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataLoaded }) => {
       },
       error: (error) => {
         console.error("CSV Parse Error:", error);
-        alert("Failed to parse CSV. Please check the format.");
+        setParseError(`Failed to parse CSV: ${error.message}`);
       }
     });
   };
 
   return (
-    <div 
+    <div
       className="border-2 border-dashed border-slate-700 bg-slate-900/50 rounded-lg p-10 text-center hover:bg-slate-900 hover:border-slate-600 transition-colors cursor-pointer group"
       onClick={() => fileInputRef.current?.click()}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
     >
       <input 
         type="file" 
@@ -132,6 +148,12 @@ const FileUpload: React.FC<FileUploadProps> = ({ onDataLoaded }) => {
           <FileText size={14} />
           <span>Supported format: .csv</span>
         </div>
+        {parseError && (
+          <div className="flex items-center gap-2 mt-3 text-xs text-red-400 bg-red-900/20 border border-red-800/40 rounded px-3 py-2">
+            <AlertCircle size={14} />
+            {parseError}
+          </div>
+        )}
       </div>
     </div>
   );
